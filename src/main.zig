@@ -121,8 +121,8 @@ const CameraInitResult = struct {
 
 fn initCamera(center: [3]f32) CameraInitResult {
     const distance = 1.0;
-    const theta = std.math.pi / 2.0; // 90 degrees
-    const phi = std.math.pi / -2.0;
+    const theta = -std.math.pi / 2.0;
+    const phi = std.math.pi / 2.0;
 
     const camera = rl.Camera3D{
         .position = .{
@@ -182,7 +182,7 @@ const SPLAT_VS =
     \\    fragColor = vertexColor;
     \\
     \\    vec3 center = vertexPosition;
-    \\    vec2 size = vertexNormal.xy * 2.0;
+    \\    vec2 size = vertexNormal.xy * 4.0;
     \\
     \\    vec3 right = vec3(matView[0][0], matView[1][0], matView[2][0]);
     \\    vec3 up    = vec3(matView[0][1], matView[1][1], matView[2][1]);
@@ -269,7 +269,8 @@ pub const GameState = struct {
         const center: [3]f32 = [_]f32{ 0, 0, 0 };
         const cam = initCamera(center);
 
-        const shader = try rl.loadShaderFromMemory(SPLAT_VS, SPLAT_FS);
+        var shader = try rl.loadShaderFromMemory(SPLAT_VS, SPLAT_FS);
+        shader.locs[@intFromEnum(rl.ShaderLocationIndex.matrix_view)] = rl.getShaderLocation(shader, "matView");
 
         var state = GameState{
             .camera = cam.camera,
