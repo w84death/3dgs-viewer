@@ -473,7 +473,10 @@ pub const GameState = struct {
     pub fn render(self: *GameState) void {
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(rl.Color.dark_blue);
+        rl.clearBackground(rl.Color.black);
+        const w = rl.getScreenWidth();
+        const h = rl.getScreenHeight();
+        rl.drawCircleGradient(@divTrunc(w, 2), @divTrunc(h, 2), @floatFromInt(h), rl.Color.dark_blue, rl.Color.black);
 
         rl.beginMode3D(self.camera);
 
