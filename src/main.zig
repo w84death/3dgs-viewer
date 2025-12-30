@@ -354,26 +354,66 @@ pub const GameState = struct {
     }
 
     fn sortSplats(self: *GameState) void {
+        const allocator = self.allocator;
+        const len = self.splats.len;
+        if (len == 0) return;
+
+        var dists = allocator.alloc(f32, len) catch unreachable;
+        defer allocator.free(dists);
+
+        const cam_pos = .{ self.camera.position.x, self.camera.position.y, self.camera.position.z };
+
+        // SIMD compute squared distances for batches of 4
+        const Vec4 = @Vector(4, f32);
+        var i: usize = 0;
+        while (i + 3 < len) {
+            const pos0 = self.splats[i].pos;
+            const pos1 = self.splats[i + 1].pos;
+            const pos2 = self.splats[i + 2].pos;
+            const pos3 = self.splats[i + 3].pos;
+
+            const dx: Vec4 = .{ pos0[0] - cam_pos[0], pos1[0] - cam_pos[0], pos2[0] - cam_pos[0], pos3[0] - cam_pos[0] };
+            const dy: Vec4 = .{ pos0[1] - cam_pos[1], pos1[1] - cam_pos[1], pos2[1] - cam_pos[1], pos3[1] - cam_pos[1] };
+            const dz: Vec4 = .{ pos0[2] - cam_pos[2], pos1[2] - cam_pos[2], pos2[2] - cam_pos[2], pos3[2] - cam_pos[2] };
+
+            const dist_sq: Vec4 = dx * dx + dy * dy + dz * dz;
+            const dist_array = @as([4]f32, dist_sq);
+            std.mem.copyForwards(f32, dists[i .. i + 4], &dist_array);
+            i += 4;
+        }
+
+        // Scalar for remainder
+        while (i < len) {
+            const pos = self.splats[i].pos;
+            const dx = pos[0] - cam_pos[0];
+            const dy = pos[1] - cam_pos[1];
+            const dz = pos[2] - cam_pos[2];
+            dists[i] = dx * dx + dy * dy + dz * dz;
+            i += 1;
+        }
+
+        // Sort indices based on dists (smaller dist_sq first for front-to-back)
+        var indices = allocator.alloc(usize, len) catch unreachable;
+        defer allocator.free(indices);
+        for (0..len) |j| indices[j] = j;
+
         const SortContext = struct {
-            cam_pos: [3]f32,
-
-            pub fn lessThan(ctx: @This(), a: Splat, b: Splat) bool {
-                const dx_a = a.pos[0] - ctx.cam_pos[0];
-                const dy_a = a.pos[1] - ctx.cam_pos[1];
-                const dz_a = a.pos[2] - ctx.cam_pos[2];
-                const dist_sq_a = dx_a * dx_a + dy_a * dy_a + dz_a * dz_a;
-
-                const dx_b = b.pos[0] - ctx.cam_pos[0];
-                const dy_b = b.pos[1] - ctx.cam_pos[1];
-                const dz_b = b.pos[2] - ctx.cam_pos[2];
-                const dist_sq_b = dx_b * dx_b + dy_b * dy_b + dz_b * dz_b;
-
-                return dist_sq_a > dist_sq_b;
+            dists: []f32,
+            pub fn lessThan(ctx: @This(), a: usize, b: usize) bool {
+                return ctx.dists[a] > ctx.dists[b];
             }
         };
 
-        const ctx = SortContext{ .cam_pos = .{ self.camera.position.x, self.camera.position.y, self.camera.position.z } };
-        std.sort.block(Splat, self.splats, ctx, SortContext.lessThan);
+        const ctx = SortContext{ .dists = dists };
+        std.sort.block(usize, indices, ctx, SortContext.lessThan);
+
+        // Reorder splats based on sorted indices
+        var temp = allocator.alloc(Splat, len) catch unreachable;
+        defer allocator.free(temp);
+        for (0..len) |j| {
+            temp[j] = self.splats[indices[j]];
+        }
+        @memcpy(self.splats, temp);
     }
 
     fn rebuildChunks(self: *GameState) !void {
@@ -689,26 +729,68 @@ pub const GameState = struct {
 };
 
 fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
+    const allocator = state.allocator;
+    const len = state.background_splats.len;
+    if (len == 0) {
+        state.sort_done.store(true, .release);
+        return;
+    }
+
+    var dists = allocator.alloc(f32, len) catch unreachable;
+    defer allocator.free(dists);
+
+    // SIMD compute squared distances for batches of 4
+    const Vec4 = @Vector(4, f32);
+    var i: usize = 0;
+    while (i + 3 < len) {
+        const pos0 = state.background_splats[i].pos;
+        const pos1 = state.background_splats[i + 1].pos;
+        const pos2 = state.background_splats[i + 2].pos;
+        const pos3 = state.background_splats[i + 3].pos;
+
+        const dx: Vec4 = .{ pos0[0] - cam_pos[0], pos1[0] - cam_pos[0], pos2[0] - cam_pos[0], pos3[0] - cam_pos[0] };
+        const dy: Vec4 = .{ pos0[1] - cam_pos[1], pos1[1] - cam_pos[1], pos2[1] - cam_pos[1], pos3[1] - cam_pos[1] };
+        const dz: Vec4 = .{ pos0[2] - cam_pos[2], pos1[2] - cam_pos[2], pos2[2] - cam_pos[2], pos3[2] - cam_pos[2] };
+
+        const dist_sq: Vec4 = dx * dx + dy * dy + dz * dz;
+        const dist_array = @as([4]f32, dist_sq);
+        std.mem.copyForwards(f32, dists[i .. i + 4], &dist_array);
+        i += 4;
+    }
+
+    // Scalar for remainder
+    while (i < len) {
+        const pos = state.background_splats[i].pos;
+        const dx = pos[0] - cam_pos[0];
+        const dy = pos[1] - cam_pos[1];
+        const dz = pos[2] - cam_pos[2];
+        dists[i] = dx * dx + dy * dy + dz * dz;
+        i += 1;
+    }
+
+    // Sort indices based on dists (smaller dist_sq first for front-to-back)
+    var indices = allocator.alloc(usize, len) catch unreachable;
+    defer allocator.free(indices);
+    for (0..len) |j| indices[j] = j;
+
     const SortContext = struct {
-        cam_pos: [3]f32,
-
-        pub fn lessThan(ctx: @This(), a: Splat, b: Splat) bool {
-            const dx_a = a.pos[0] - ctx.cam_pos[0];
-            const dy_a = a.pos[1] - ctx.cam_pos[1];
-            const dz_a = a.pos[2] - ctx.cam_pos[2];
-            const dist_sq_a = dx_a * dx_a + dy_a * dy_a + dz_a * dz_a;
-
-            const dx_b = b.pos[0] - ctx.cam_pos[0];
-            const dy_b = b.pos[1] - ctx.cam_pos[1];
-            const dz_b = b.pos[2] - ctx.cam_pos[2];
-            const dist_sq_b = dx_b * dx_b + dy_b * dy_b + dz_b * dz_b;
-
-            return dist_sq_a > dist_sq_b;
+        dists: []f32,
+        pub fn lessThan(ctx: @This(), a: usize, b: usize) bool {
+            return ctx.dists[a] > ctx.dists[b];
         }
     };
 
-    const ctx = SortContext{ .cam_pos = cam_pos };
-    std.sort.block(Splat, state.background_splats, ctx, SortContext.lessThan);
+    const ctx = SortContext{ .dists = dists };
+    std.sort.block(usize, indices, ctx, SortContext.lessThan);
+
+    // Reorder splats based on sorted indices
+    var temp = allocator.alloc(Splat, len) catch unreachable;
+    defer allocator.free(temp);
+    for (0..len) |j| {
+        temp[j] = state.background_splats[indices[j]];
+    }
+    @memcpy(state.background_splats, temp);
+
     state.sort_done.store(true, .release);
 }
 
