@@ -193,7 +193,6 @@ const Chunk = struct {
 
 const SPLAT_VS =
     \\#version 330
-    \\
     \\in vec3 vertexPosition;
     \\in vec2 vertexTexCoord;
     \\in vec3 vertexNormal;
@@ -204,6 +203,7 @@ const SPLAT_VS =
     \\
     \\uniform mat4 mvp;
     \\uniform mat4 matView;
+    \\uniform float splatScale;
     \\
     \\void main()
     \\{
@@ -211,7 +211,7 @@ const SPLAT_VS =
     \\    fragColor = vertexColor;
     \\
     \\    vec3 center = vertexPosition;
-    \\    vec2 size = vertexNormal.xy * 2.0;
+    \\    vec2 size = vertexNormal.xy * splatScale;
     \\
     \\    vec3 right = vec3(matView[0][0], matView[1][0], matView[2][0]);
     \\    vec3 up    = vec3(matView[0][1], matView[1][1], matView[2][1]);
@@ -226,7 +226,6 @@ const SPLAT_VS =
 
 const SPLAT_FS =
     \\#version 330
-    \\
     \\in vec2 fragTexCoord;
     \\in vec4 fragColor;
     \\out vec4 color;
@@ -237,10 +236,8 @@ const SPLAT_FS =
     \\    vec2 p = fragTexCoord - center;
     \\    float r2 = dot(p, p);
     \\
-    \\    if (r2 > 0.5) discard;
-    \\    color.rgb = pow(color.rgb, vec3(1.0/2.2));
-    \\
-    \\    float alpha = exp(-r2 * 10.0);
+    \\    if (r2 > 0.25) discard;
+    \\    float alpha = exp(-r2 * 16.0);
     \\    color = fragColor;
     \\    color.rgb = pow(color.rgb, vec3(1.0/2.2));
     \\    color.a *= alpha;
@@ -261,7 +258,8 @@ pub const GameState = struct {
     vertex_count: usize,
     rendered_splats_count: usize = 0,
     splats: []Splat,
-    skip_factor: usize = 1,
+    splat_scale: f32 = 2.0,
+    skip_factor: usize = 10,
     buf: [64]u8 = undefined,
     allocator: std.mem.Allocator,
     file_paths: []const []const u8,
@@ -535,6 +533,10 @@ pub const GameState = struct {
         for (skip_keys) |sk| {
             if (rl.isKeyPressed(sk.key)) self.skip_factor = sk.value;
         }
+        if (rl.isKeyPressed(rl.KeyboardKey.five)) self.skip_factor = 25;
+        if (rl.isKeyPressed(rl.KeyboardKey.eight)) self.splat_scale = 2.0;
+        if (rl.isKeyPressed(rl.KeyboardKey.nine)) self.splat_scale = 4.0;
+        if (rl.isKeyPressed(rl.KeyboardKey.zero)) self.splat_scale = 8.0;
         if (rl.isKeyReleased(rl.KeyboardKey.f)) rl.toggleFullscreen();
 
         if (self.skip_factor != old_skip) {
@@ -670,6 +672,11 @@ pub const GameState = struct {
 
         rl.gl.rlDisableBackfaceCulling();
         rl.gl.rlDisableDepthMask();
+        // Set splat scale uniform
+        const scale_loc = rl.getShaderLocation(self.shader, "splatScale");
+        if (scale_loc != -1) {
+            rl.setShaderValue(self.shader, scale_loc, &self.splat_scale, rl.ShaderUniformDataType.float);
+        }
         for (self.chunks.items) |chunk| {
             rl.drawMesh(chunk.model.meshes[0], chunk.model.materials[0], chunk.model.transform);
         }
@@ -826,13 +833,25 @@ pub fn main() !void {
             rl.drawRectangle(50, 50, 700, 500, rl.Color.white);
             const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view:", .{}) catch "Error";
             rl.drawText(title, 60, 60, 24, rl.Color.black);
+            const cols = 3;
+            const button_w = 200;
+            const button_h = 35;
+            const spacing_x = 10;
+            const spacing_y = 10;
+            const start_x = 60;
+            const start_y = 90;
             for (file_paths.items, 0..) |path, i| {
-                const y = 90 + @as(i32, @intCast(i)) * 30;
-                const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{path}) catch "Error";
-                rl.drawRectangleLines(70, y - 2, 620, 30, rl.Color.black);
-                rl.drawText(file_text, 80, y, 20, rl.Color.black);
+                const col = @as(i32, @intCast(i % cols));
+                const row = @as(i32, @intCast(i / cols));
+                const x = start_x + col * (button_w + spacing_x);
+                const y = start_y + row * (button_h + spacing_y);
+                // Clip filename to 16 chars
+                const clipped = std.mem.sliceTo(path, 16);
+                const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
+                rl.drawRectangleLines(x, y, button_w, button_h, rl.Color.black);
+                rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.black);
             }
-            const instr = std.fmt.bufPrintZ(&text_buf, "Left-click to select, Right-click does nothing", .{}) catch "Error";
+            const instr = std.fmt.bufPrintZ(&text_buf, "Left-click to select, Right-click to back to this menu", .{}) catch "Error";
             rl.drawText(instr, 60, 520, 18, rl.Color.gray);
             rl.endDrawing();
         }
