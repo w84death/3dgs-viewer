@@ -17,18 +17,21 @@ const CENTER_Z_MAX = 2.0;
 const ROTATION_STOP_CAP = 16;
 const SORT_TRIGGER_FRAME = 15;
 const SORT_CHECK_INTERVAL = 30;
-const FPS_POS_X = 10;
-const FPS_POS_Y = 10;
-const POINTS_POS_X = 10;
-const POINTS_POS_Y = 30;
-const POINTS_FONT_SIZE = 20;
-const LOADING_RECT_X = 10;
-const LOADING_RECT_Y = 40;
-const LOADING_RECT_W = 100;
-const LOADING_RECT_H = 25;
-const LOADING_TEXT_X = 15;
-const LOADING_TEXT_Y = 45;
-const LOADING_FONT_SIZE = 16;
+
+const UI = struct {
+    const FPS_POS_X = 10;
+    const FPS_POS_Y = 10;
+    const POINTS_POS_X = 10;
+    const POINTS_POS_Y = 30;
+    const POINTS_FONT_SIZE = 20;
+    const LOADING_RECT_X = 10;
+    const LOADING_RECT_Y = 40;
+    const LOADING_RECT_W = 100;
+    const LOADING_RECT_H = 25;
+    const LOADING_TEXT_X = 15;
+    const LOADING_TEXT_Y = 45;
+    const LOADING_FONT_SIZE = 16;
+};
 
 const CamState = struct {
     distance: f32,
@@ -493,35 +496,12 @@ pub const GameState = struct {
         self.rendered_splats_count = total_rendered;
     }
 
-    pub fn update(self: *GameState, dt: f32) void {
+    // Handle user input (keys and mouse)
+    fn handleInput(self: *GameState) void {
         if (rl.isKeyPressed(rl.KeyboardKey.f11)) {
             rl.toggleFullscreen();
         }
 
-        self.frame_count += 1;
-
-        if (self.is_loading) {
-            const next_idx = (self.current_file_idx + 1) % self.file_paths.items.len;
-            const next_path = self.file_paths.items[next_idx];
-            std.debug.print("Loading {s}...\n", .{next_path});
-
-            if (loadPly(self.allocator, next_path)) |res| {
-                self.allocator.free(self.splats);
-                if (self.background_splats.len > 0) self.allocator.free(self.background_splats);
-                self.splats = res.splats;
-                self.vertex_count = res.vertex_count;
-                self.background_splats = self.allocator.alloc(Splat, self.vertex_count) catch unreachable;
-                self.current_file_idx = next_idx;
-
-                self.sortSplats();
-                self.rebuildChunks() catch |err| {
-                    std.debug.print("Failed to rebuild chunks: {}\n", .{err});
-                };
-            } else |err| {
-                std.debug.print("Failed to load {s}: {}\n", .{ next_path, err });
-            }
-            self.is_loading = false;
-        }
         if (rl.isKeyPressed(rl.KeyboardKey.space)) {
             self.is_loading = true;
         }
@@ -535,19 +515,6 @@ pub const GameState = struct {
 
         if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
             self.cam_state.dragging = false;
-        }
-
-        if (self.cam_state.dragging and rl.isMouseButtonDown(rl.MouseButton.left)) {
-            const current_pos = rl.getMousePosition();
-            const delta_x = self.cam_state.mouse_start.x - current_pos.x;
-            const delta_y = self.cam_state.mouse_start.y - current_pos.y;
-            self.cam_state.theta = self.cam_state.theta_start - delta_x * MOUSE_SENSITIVITY;
-            self.cam_state.phi = self.cam_state.phi_start + delta_y * MOUSE_SENSITIVITY;
-
-            self.cam_state.theta = std.math.clamp(self.cam_state.theta, self.cam_state.initial_theta - CAMERA_DELTA_RAD, self.cam_state.initial_theta + CAMERA_DELTA_RAD);
-            self.cam_state.phi = std.math.clamp(self.cam_state.phi, self.cam_state.initial_phi - CAMERA_DELTA_RAD, self.cam_state.initial_phi + CAMERA_DELTA_RAD);
-
-            self.cam_state.phi = std.math.clamp(self.cam_state.phi, CAMERA_PHI_MIN, CAMERA_PHI_MAX);
         }
 
         const old_skip = self.skip_factor;
@@ -567,6 +534,22 @@ pub const GameState = struct {
             self.rebuildChunks() catch |err| {
                 std.debug.print("Failed to rebuild chunks: {}\n", .{err});
             };
+        }
+    }
+
+    // Update camera state based on input and time
+    fn updateCamera(self: *GameState, dt: f32) void {
+        if (self.cam_state.dragging and rl.isMouseButtonDown(rl.MouseButton.left)) {
+            const current_pos = rl.getMousePosition();
+            const delta_x = self.cam_state.mouse_start.x - current_pos.x;
+            const delta_y = self.cam_state.mouse_start.y - current_pos.y;
+            self.cam_state.theta = self.cam_state.theta_start - delta_x * MOUSE_SENSITIVITY;
+            self.cam_state.phi = self.cam_state.phi_start + delta_y * MOUSE_SENSITIVITY;
+
+            self.cam_state.theta = std.math.clamp(self.cam_state.theta, self.cam_state.initial_theta - CAMERA_DELTA_RAD, self.cam_state.initial_theta + CAMERA_DELTA_RAD);
+            self.cam_state.phi = std.math.clamp(self.cam_state.phi, self.cam_state.initial_phi - CAMERA_DELTA_RAD, self.cam_state.initial_phi + CAMERA_DELTA_RAD);
+
+            self.cam_state.phi = std.math.clamp(self.cam_state.phi, CAMERA_PHI_MIN, CAMERA_PHI_MAX);
         }
 
         // Vertigo effect (Dolly Zoom)
@@ -595,7 +578,10 @@ pub const GameState = struct {
         const cy = self.cam_state.distance * std.math.cos(self.cam_state.phi);
         const cz = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.sin(self.cam_state.theta);
         self.camera.position = .{ .x = self.center[0] + cx, .y = self.center[1] + cy, .z = self.center[2] + cz };
+    }
 
+    // Manage sorting thread and related logic
+    fn manageSorting(self: *GameState) void {
         if (self.cam_state.dragging) {
             self.rotation_stop_counter = 0;
         } else {
@@ -635,6 +621,38 @@ pub const GameState = struct {
         }
     }
 
+    pub fn update(self: *GameState, dt: f32) void {
+        self.handleInput();
+
+        self.frame_count += 1;
+
+        if (self.is_loading) {
+            const next_idx = (self.current_file_idx + 1) % self.file_paths.items.len;
+            const next_path = self.file_paths.items[next_idx];
+            std.debug.print("Loading {s}...\n", .{next_path});
+
+            if (loadPly(self.allocator, next_path)) |res| {
+                self.allocator.free(self.splats);
+                if (self.background_splats.len > 0) self.allocator.free(self.background_splats);
+                self.splats = res.splats;
+                self.vertex_count = res.vertex_count;
+                self.background_splats = self.allocator.alloc(Splat, self.vertex_count) catch unreachable;
+                self.current_file_idx = next_idx;
+
+                self.sortSplats();
+                self.rebuildChunks() catch |err| {
+                    std.debug.print("Failed to rebuild chunks: {}\n", .{err});
+                };
+            } else |err| {
+                std.debug.print("Failed to load {s}: {}\n", .{ next_path, err });
+            }
+            self.is_loading = false;
+        }
+
+        self.updateCamera(dt);
+        self.manageSorting();
+    }
+
     pub fn render(self: *GameState) void {
         rl.beginDrawing();
         defer rl.endDrawing();
@@ -653,15 +671,20 @@ pub const GameState = struct {
 
         rl.endMode3D();
 
+        self.drawUI();
+    }
+
+    // Draw UI elements
+    fn drawUI(self: *GameState) void {
         if (self.is_loading) {
-            rl.drawRectangle(LOADING_RECT_X, LOADING_RECT_Y, LOADING_RECT_W, LOADING_RECT_H, rl.Color.black);
-            rl.drawText("LOADING...", LOADING_TEXT_X, LOADING_TEXT_Y, LOADING_FONT_SIZE, rl.Color.white);
+            rl.drawRectangle(UI.LOADING_RECT_X, UI.LOADING_RECT_Y, UI.LOADING_RECT_W, UI.LOADING_RECT_H, rl.Color.black);
+            rl.drawText("LOADING...", UI.LOADING_TEXT_X, UI.LOADING_TEXT_Y, UI.LOADING_FONT_SIZE, rl.Color.white);
         }
 
-        rl.drawFPS(FPS_POS_X, FPS_POS_Y);
+        rl.drawFPS(UI.FPS_POS_X, UI.FPS_POS_Y);
 
         _ = std.fmt.bufPrintZ(&self.buf, "Rendered points: {}", .{self.rendered_splats_count}) catch "Error";
-        rl.drawText(@ptrCast(&self.buf), POINTS_POS_X, POINTS_POS_Y, POINTS_FONT_SIZE, rl.Color.white);
+        rl.drawText(@ptrCast(&self.buf), UI.POINTS_POS_X, UI.POINTS_POS_Y, UI.POINTS_FONT_SIZE, rl.Color.white);
     }
 };
 
