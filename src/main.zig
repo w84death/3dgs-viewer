@@ -26,6 +26,8 @@ const MENU_RECT_H = 760;
 const TITLE_X = 30;
 const TITLE_Y = 30;
 const TITLE_FONT_SIZE = 28;
+const NAV_X = 30;
+const NAV_Y = 70;
 const GRID_COLS = 4;
 const FILES_PER_PAGE = 44;
 const GRID_BUTTON_W = 280;
@@ -33,7 +35,7 @@ const GRID_BUTTON_H = 40;
 const GRID_SPACING_X = 10;
 const GRID_SPACING_Y = 10;
 const GRID_START_X = 30;
-const GRID_START_Y = 100;
+const GRID_START_Y = 160;
 const FILENAME_CLIP = 12;
 const PAG_BTN_W = 100;
 const PAG_BTN_H = 40;
@@ -47,7 +49,7 @@ const UI = struct {
     const FPS_POS_Y = 10;
     const POINTS_POS_X = 10;
     const POINTS_POS_Y = 30;
-    const POINTS_FONT_SIZE = 20;
+    const POINTS_FONT_SIZE = 10;
     const LOADING_RECT_X = 10;
     const LOADING_RECT_Y = 40;
     const LOADING_RECT_W = 100;
@@ -307,7 +309,7 @@ pub const GameState = struct {
 
     const SPLATS_PER_CHUNK = 60000;
 
-    pub fn initWithIdx(allocator: std.mem.Allocator, file_paths: []const []const u8, file_idx: usize) !GameState {
+    pub fn initWithIdx(allocator: std.mem.Allocator, file_paths: []const []const u8, file_idx: usize, splat_scale: f32, skip_factor: usize) !GameState {
         if (file_idx >= file_paths.len) return error.InvalidIndex;
 
         const result = try loadPly(allocator, file_paths[file_idx]);
@@ -325,7 +327,8 @@ pub const GameState = struct {
             .radius = 10.0,
             .vertex_count = result.vertex_count,
             .splats = result.splats,
-            .skip_factor = 1,
+            .splat_scale = splat_scale,
+            .skip_factor = skip_factor,
             .allocator = allocator,
             .file_paths = file_paths,
             .current_file_idx = file_idx,
@@ -786,10 +789,9 @@ fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
 
 pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vector2) bool {
     const is_hovered = rl.checkCollisionPointRec(mouse, rl.Rectangle.init(@floatFromInt(x), @floatFromInt(y), @floatFromInt(w), @floatFromInt(h)));
-    const button_alpha: u8 = if (is_hovered) 150 else 100;
-    rl.drawRectangleRounded(.{ .x = @floatFromInt(x + 3), .y = @floatFromInt(y + 3), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 40 });
-    rl.drawRectangleRounded(.{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = button_alpha });
-    rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(x - 1), .y = @floatFromInt(y - 1), .width = @floatFromInt(GRID_BUTTON_W + 2), .height = @floatFromInt(GRID_BUTTON_H + 2) }, 0.2, 10, rl.Color.sky_blue);
+    const top_color = if (is_hovered) rl.Color.sky_blue else rl.Color.blue;
+    const bottom_color = if (is_hovered) rl.Color.blue else rl.Color.dark_blue;
+    rl.drawRectangleGradientV(x, y, w, h, top_color, bottom_color);
     rl.drawText(label, x + 10, y + 5, 24, rl.Color.white);
     return rl.isMouseButtonPressed(rl.MouseButton.left) and is_hovered;
 }
@@ -825,14 +827,17 @@ pub fn main() !void {
     var selected_file: ?usize = null;
     var current_page: usize = 0;
     var text_buf: [256]u8 = undefined;
-
-    while (!rl.windowShouldClose()) {
+    var shoudClose: bool = false;
+    var skip_factor: usize = 1;
+    var splat_scale: f32 = 2.0;
+    while (!rl.windowShouldClose() and !shoudClose) {
         const dt = rl.getFrameTime();
         const mouse = rl.getMousePosition();
 
         if (game_state) |*gs| {
             gs.update(dt);
             gs.render();
+
             if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
                 gs.deinit();
                 game_state = null;
@@ -861,7 +866,7 @@ pub fn main() !void {
                 const clipped = std.mem.sliceTo(path, FILENAME_CLIP);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
                 if (button(x, y, GRID_BUTTON_W, GRID_BUTTON_H, file_text, mouse)) {
-                    game_state = try GameState.initWithIdx(allocator, file_paths.items, i);
+                    game_state = try GameState.initWithIdx(allocator, file_paths.items, i, splat_scale, skip_factor);
                 }
             }
             if (total_pages > 1) {
@@ -873,9 +878,46 @@ pub fn main() !void {
                 }
             }
 
+            var nav: i32 = @intCast(NAV_X);
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, "Quit", mouse)) {
+                shoudClose = true;
+            }
+            nav += 88 + 20;
+            rl.drawText("Splats:", nav, NAV_Y + 10, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            nav += 76;
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 1) "[100%]" else "100%", mouse)) {
+                skip_factor = 1;
+            }
+            nav += 88;
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 2) "[50%]" else "50%", mouse)) {
+                skip_factor = 2;
+            }
+            nav += 88;
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 5) "[20%]" else "20%", mouse)) {
+                skip_factor = 5;
+            }
+            nav += 88;
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 10) "[10%]" else "10%", mouse)) {
+                skip_factor = 10;
+            }
+            nav += 88 + 30;
+            rl.drawText("Splat size:", nav, NAV_Y + 10, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            nav += 110;
+            if (button(nav, NAV_Y, 60, PAG_BTN_H, if (splat_scale == 2.0) "[2x]" else "2x", mouse)) {
+                splat_scale = 2.0;
+            }
+            nav += 68;
+            if (button(nav, NAV_Y, 60, PAG_BTN_H, if (splat_scale == 4.0) "[4x]" else "4x", mouse)) {
+                splat_scale = 4.0;
+            }
+            nav += 68;
+            if (button(nav, NAV_Y, 60, PAG_BTN_H, if (splat_scale == 8.0) "[8x]" else "8x", mouse)) {
+                splat_scale = 8.0;
+            }
+
             rl.drawText("Left-click: Select Gaussian Splat | Right-click: Back to Browser", TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.white);
-            rl.drawText("1-2-3-4: Number of splats (100%,150%,20%,10%,4%) | 8-9-0: Splat size (2x, 4x, 8x)", TITLE_X, INSTR_Y + 24, INSTR_FONT_SIZE, rl.Color.white);
-            // 1,2,5,10,25
+            rl.drawText("1-2-3-4: Number of splats | 8-9-0: Splat size", TITLE_X, INSTR_Y + 28, INSTR_FONT_SIZE, rl.Color.white);
+
             rl.endDrawing();
         }
     }
