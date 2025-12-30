@@ -231,6 +231,7 @@ pub const GameState = struct {
     center: [3]f32,
     radius: f32,
     vertex_count: usize,
+    rendered_splats_count: usize = 0,
     splats: []Splat,
     skip_factor: usize = 10,
     buf: [64]u8 = undefined,
@@ -253,11 +254,6 @@ pub const GameState = struct {
     sort_done: Atomic = Atomic.init(false),
     rotation_stop_counter: usize = 0,
     is_loading: bool = false,
-    loading_rect_y: i32 = 0,
-    loading_rect_w: i32 = 0,
-    loading_text_x: i32 = 0,
-    loading_text_y: i32 = 0,
-    loading_text_width: i32 = 0,
 
     const SPLATS_PER_CHUNK = 60000;
 
@@ -310,7 +306,6 @@ pub const GameState = struct {
 
         self.sortSplats();
         try self.rebuildChunks();
-        self.updateUI();
 
         return self;
     }
@@ -466,12 +461,17 @@ pub const GameState = struct {
             }
             processed = end;
         }
+
+        var total_rendered: usize = 0;
+        for (self.chunks.items) |chunk| {
+            total_rendered += @intCast(@divFloor(chunk.model.meshes[0].vertexCount, 6));
+        }
+        self.rendered_splats_count = total_rendered;
     }
 
     pub fn update(self: *GameState, dt: f32) void {
         if (rl.isKeyPressed(rl.KeyboardKey.f11)) {
             rl.toggleFullscreen();
-            self.updateUI();
         }
 
         self.frame_count += 1;
@@ -639,28 +639,14 @@ pub const GameState = struct {
         rl.endMode3D();
 
         if (self.is_loading) {
-            rl.drawRectangle(0, self.loading_rect_y, self.loading_rect_w, 40, rl.Color.black);
-            rl.drawText("LOADING...", self.loading_text_x, self.loading_text_y, 20, rl.Color.white);
+            rl.drawRectangle(10, 65, 140, 40, rl.Color.black);
+            rl.drawText("LOADING...", 20, 75, 20, rl.Color.white);
         }
 
         rl.drawFPS(10, 10);
 
-        const num_rendered = if (self.splats.len == 0) 0 else ((self.splats.len - 1) / self.skip_factor) + 1;
-        _ = std.fmt.bufPrintZ(&self.buf, "Rendered points: {}", .{num_rendered}) catch "Error";
+        _ = std.fmt.bufPrintZ(&self.buf, "Rendered points: {}", .{self.rendered_splats_count}) catch "Error";
         rl.drawText(@ptrCast(&self.buf), 10, 30, 20, rl.Color.white);
-    }
-
-    fn updateUI(self: *GameState) void {
-        const w = rl.getScreenWidth();
-        const h = rl.getScreenHeight();
-        const rect_height = 40;
-        self.loading_rect_y = @divTrunc(h, 2) - @divTrunc(rect_height, 2);
-        self.loading_rect_w = w;
-        const text = "LOADING...";
-        const font_size = 20;
-        self.loading_text_width = rl.measureText(text, font_size);
-        self.loading_text_x = @divTrunc(w - self.loading_text_width, 2);
-        self.loading_text_y = @divTrunc(h, 2) - @divTrunc(font_size, 2);
     }
 };
 
