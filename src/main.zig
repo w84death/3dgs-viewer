@@ -290,7 +290,6 @@ pub const GameState = struct {
             .radius = 10.0,
             .vertex_count = result.vertex_count,
             .splats = result.splats,
-            .skip_factor = 1,
             .allocator = allocator,
             .file_paths = file_paths,
             .current_file_idx = current_file_idx,
@@ -529,11 +528,16 @@ pub const GameState = struct {
         }
 
         const old_skip = self.skip_factor;
-        if (rl.isKeyPressed(rl.KeyboardKey.one)) self.skip_factor = 1;
-        if (rl.isKeyPressed(rl.KeyboardKey.two)) self.skip_factor = 2;
-        if (rl.isKeyPressed(rl.KeyboardKey.three)) self.skip_factor = 5;
-        if (rl.isKeyPressed(rl.KeyboardKey.four)) self.skip_factor = 10;
-        if (rl.isKeyPressed(rl.KeyboardKey.five)) self.skip_factor = 25;
+        const skip_keys = [_]struct { key: rl.KeyboardKey, value: usize }{
+            .{ .key = rl.KeyboardKey.one, .value = 1 },
+            .{ .key = rl.KeyboardKey.two, .value = 2 },
+            .{ .key = rl.KeyboardKey.three, .value = 5 },
+            .{ .key = rl.KeyboardKey.four, .value = 10 },
+            .{ .key = rl.KeyboardKey.five, .value = 25 },
+        };
+        for (skip_keys) |sk| {
+            if (rl.isKeyPressed(sk.key)) self.skip_factor = sk.value;
+        }
         if (rl.isKeyReleased(rl.KeyboardKey.f)) rl.toggleFullscreen();
 
         if (self.skip_factor != old_skip) {
@@ -543,33 +547,23 @@ pub const GameState = struct {
         }
 
         // Vertigo effect (Dolly Zoom)
-        if (rl.isKeyDown(rl.KeyboardKey.q) or rl.isKeyDown(rl.KeyboardKey.w)) {
-            const zoom_speed = 20.0 * dt;
+        var fov_delta: f32 = 0;
+        if (rl.isKeyDown(rl.KeyboardKey.w)) fov_delta += 20.0 * dt;
+        if (rl.isKeyDown(rl.KeyboardKey.q)) fov_delta -= 20.0 * dt;
+        if (fov_delta != 0) {
+            self.camera.fovy += fov_delta;
+            self.camera.fovy = std.math.clamp(self.camera.fovy, 2.0, 90.0);
             const current_fov_rad = self.camera.fovy * std.math.pi / 180.0;
             const view_height = 2.0 * self.cam_state.distance * std.math.tan(current_fov_rad / 2.0);
-
-            if (rl.isKeyDown(rl.KeyboardKey.w)) {
-                self.camera.fovy += zoom_speed;
-            }
-            if (rl.isKeyDown(rl.KeyboardKey.q)) {
-                self.camera.fovy -= zoom_speed;
-            }
-
-            self.camera.fovy = std.math.clamp(self.camera.fovy, 2.0, 90.0);
-
             const new_fov_rad = self.camera.fovy * std.math.pi / 180.0;
             self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
         }
 
-        if (rl.isKeyDown(rl.KeyboardKey.up) or rl.isKeyDown(rl.KeyboardKey.down)) {
-            const move_speed = 2.0 * dt;
-
-            if (rl.isKeyDown(rl.KeyboardKey.down)) {
-                self.center[2] -= move_speed;
-            }
-            if (rl.isKeyDown(rl.KeyboardKey.up)) {
-                self.center[2] += move_speed;
-            }
+        var z_delta: f32 = 0;
+        if (rl.isKeyDown(rl.KeyboardKey.up)) z_delta += 2.0 * dt;
+        if (rl.isKeyDown(rl.KeyboardKey.down)) z_delta -= 2.0 * dt;
+        if (z_delta != 0) {
+            self.center[2] += z_delta;
             self.center[2] = std.math.clamp(self.center[2], -1.0, 2.0);
             self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
         }
@@ -622,9 +616,7 @@ pub const GameState = struct {
         rl.beginDrawing();
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.black);
-        const w = rl.getScreenWidth();
-        const h = rl.getScreenHeight();
-        rl.drawCircleGradient(@divTrunc(w, 2), @divTrunc(h, 2), @floatFromInt(h), rl.Color.dark_blue, rl.Color.black);
+        rl.drawCircleGradient(@divTrunc(rl.getScreenWidth(), 2), @divTrunc(rl.getScreenHeight(), 2), @floatFromInt(rl.getScreenHeight()), rl.Color.dark_blue, rl.Color.black);
 
         rl.beginMode3D(self.camera);
 
