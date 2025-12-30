@@ -870,14 +870,39 @@ pub fn main() !void {
                 const row = @as(i32, @intCast(local_i / cols));
                 const x = start_x + col * (button_w + spacing_x);
                 const y = start_y + row * (button_h + spacing_y);
+                // Shadow
+                rl.drawRectangle(x + 3, y + 3, button_w, button_h, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                // Button background
+                rl.drawRectangle(x, y, button_w, button_h, rl.Color.light_gray);
+                // Rim
+                rl.drawRectangleLines(x - 1, y - 1, button_w + 2, button_h + 2, rl.Color.dark_gray);
                 // Clip filename to 18 chars
                 const clipped = std.mem.sliceTo(path, 18);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
-                rl.drawRectangleLines(x, y, button_w, button_h, rl.Color.black);
                 rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.black);
             }
+            // Pagination buttons if needed
+            if (total_pages > 1) {
+                const btn_w = 100;
+                const btn_h = 40;
+                const btn_y = 720;
+                // Prev button
+                const prev_x = 30;
+                rl.drawRectangle(prev_x + 3, btn_y + 3, btn_w, btn_h, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangle(prev_x, btn_y, btn_w, btn_h, rl.Color.light_gray);
+                rl.drawRectangleLines(prev_x - 1, btn_y - 1, btn_w + 2, btn_h + 2, rl.Color.dark_gray);
+                const prev_text = std.fmt.bufPrintZ(&text_buf, "Prev", .{}) catch "Error";
+                rl.drawText(prev_text, prev_x + 25, btn_y + 8, 24, rl.Color.black);
+                // Next button
+                const next_x = prev_x + btn_w + 20;
+                rl.drawRectangle(next_x + 3, btn_y + 3, btn_w, btn_h, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangle(next_x, btn_y, btn_w, btn_h, rl.Color.light_gray);
+                rl.drawRectangleLines(next_x - 1, btn_y - 1, btn_w + 2, btn_h + 2, rl.Color.dark_gray);
+                const next_text = std.fmt.bufPrintZ(&text_buf, "Next", .{}) catch "Error";
+                rl.drawText(next_text, next_x + 25, btn_y + 8, 24, rl.Color.black);
+            }
             const instr = std.fmt.bufPrintZ(&text_buf, "Q/E: Prev/Next Page | Left-click: Select | Right-click: Back to Viewer", .{}) catch "Error";
-            rl.drawText(instr, 30, 720, 20, rl.Color.gray);
+            rl.drawText(instr, 30, 700, 20, rl.Color.gray);
             rl.endDrawing();
         }
     }
