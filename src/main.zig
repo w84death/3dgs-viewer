@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const std = @import("std");
 const WIDTH = 1280;
 const HEIGHT = 800;
+
 const CamState = struct {
     distance: f32,
     theta: f32,
@@ -151,11 +152,19 @@ fn initCamera(center: [3]f32) CameraInitResult {
     };
 }
 
+const Chunk = struct {
+    model: rl.Model,
+
+    pub fn deinit(self: Chunk) void {
+        rl.unloadModel(self.model);
+    }
+};
+
 pub const GameState = struct {
     pub const config = .{
         .width = WIDTH,
         .height = HEIGHT,
-        .title = "Gaussian Splat Viewer",
+        .title = "Gaussian Splat Viewer (Optimized)",
         .target_fps = 60,
     };
     camera: rl.Camera3D,
@@ -170,6 +179,7 @@ pub const GameState = struct {
     allocator: std.mem.Allocator,
     file_paths: std.ArrayListUnmanaged([]const u8),
     current_file_idx: usize,
+    chunks: std.ArrayListUnmanaged(Chunk),
 
     pub fn init() !GameState {
         const allocator = std.heap.page_allocator;
@@ -193,7 +203,7 @@ pub const GameState = struct {
         const center: [3]f32 = [_]f32{ 0, 0, 0 };
         const cam = initCamera(center);
 
-        return GameState{
+        var state = GameState{
             .camera = cam.camera,
             .cam_state = cam.cam_state,
             .center = center,
@@ -204,17 +214,111 @@ pub const GameState = struct {
             .allocator = allocator,
             .file_paths = file_paths,
             .current_file_idx = current_file_idx,
+            .chunks = .{},
         };
+
+        try state.rebuildChunks();
+
+        return state;
     }
 
     pub fn deinit(self: *GameState) void {
         const allocator = self.allocator;
+        for (self.chunks.items) |c| c.deinit();
+        self.chunks.deinit(allocator);
         allocator.free(self.splats);
         allocator.free(self.splat_data);
         for (self.file_paths.items) |path| {
             allocator.free(path);
         }
         self.file_paths.deinit(allocator);
+    }
+
+    fn rebuildChunks(self: *GameState) !void {
+        // Clear old chunks
+        for (self.chunks.items) |c| c.deinit();
+        self.chunks.clearRetainingCapacity();
+
+        if (self.splats.len == 0) return;
+
+        const SPLATS_PER_CHUNK = 60000;
+        var processed: usize = 0;
+
+        std.debug.print("Building chunks with skip_factor={}...\n", .{self.skip_factor});
+
+        while (processed < self.splats.len) {
+            const end = @min(processed + SPLATS_PER_CHUNK, self.splats.len);
+
+            // Count actual vertices needed
+            var count: usize = 0;
+            for (processed..end) |i| {
+                if (i % self.skip_factor == 0) count += 1;
+            }
+
+            if (count > 0) {
+                var mesh = std.mem.zeroes(rl.Mesh);
+                mesh.vertexCount = @intCast(count * 3);
+                mesh.triangleCount = @intCast(count);
+
+                const vertices = try self.allocator.alloc(f32, @as(usize, @intCast(mesh.vertexCount)) * 3);
+                defer self.allocator.free(vertices);
+                const colors = try self.allocator.alloc(u8, @as(usize, @intCast(mesh.vertexCount)) * 4);
+                defer self.allocator.free(colors);
+
+                var v_idx: usize = 0;
+                var c_idx: usize = 0;
+
+                for (processed..end) |i| {
+                    if (i % self.skip_factor != 0) continue;
+
+                    const s = self.splats[i];
+                    const x = s.pos[0];
+                    const y = s.pos[1];
+                    const z = s.pos[2];
+                    const sz = 0.005;
+
+                    // V1
+                    vertices[v_idx] = x + sz;
+                    vertices[v_idx + 1] = y - sz;
+                    vertices[v_idx + 2] = z;
+                    // V2
+                    vertices[v_idx + 3] = x - sz;
+                    vertices[v_idx + 4] = y - sz;
+                    vertices[v_idx + 5] = z;
+                    // V3
+                    vertices[v_idx + 6] = x;
+                    vertices[v_idx + 7] = y + sz;
+                    vertices[v_idx + 8] = z;
+                    v_idx += 9;
+
+                    const r = s.r;
+                    const g = s.g;
+                    const b = s.b;
+                    const a = s.a;
+                    for (0..3) |_| {
+                        colors[c_idx] = r;
+                        colors[c_idx + 1] = g;
+                        colors[c_idx + 2] = b;
+                        colors[c_idx + 3] = a;
+                        c_idx += 4;
+                    }
+                }
+
+                mesh.vertices = vertices.ptr;
+                mesh.colors = colors.ptr;
+
+                rl.uploadMesh(&mesh, false);
+
+                // Clear pointers so Raylib doesn't try to free our allocator memory
+                mesh.vertices = null;
+                mesh.colors = null;
+
+                const model = try rl.loadModelFromMesh(mesh);
+                try self.chunks.append(self.allocator, Chunk{ .model = model });
+            }
+            processed = end;
+        }
+        std.debug.print("Created {} chunks.\n", .{self.chunks.items.len});
     }
 
     pub fn update(self: *GameState, dt: f32) void {
@@ -231,6 +335,10 @@ pub const GameState = struct {
                 self.splat_data = res.ply_data;
                 self.vertex_count = res.vertex_count;
                 self.current_file_idx = next_idx;
+
+                self.rebuildChunks() catch |err| {
+                    std.debug.print("Failed to rebuild chunks: {}\n", .{err});
+                };
             } else |err| {
                 std.debug.print("Failed to load {s}: {}\n", .{ next_path, err });
             }
@@ -270,10 +378,17 @@ pub const GameState = struct {
         }
 
         // Key bindings for skip factor
+        const old_skip = self.skip_factor;
         if (rl.isKeyPressed(rl.KeyboardKey.one)) self.skip_factor = 1;
         if (rl.isKeyPressed(rl.KeyboardKey.two)) self.skip_factor = 10;
         if (rl.isKeyPressed(rl.KeyboardKey.three)) self.skip_factor = 50;
         if (rl.isKeyPressed(rl.KeyboardKey.four)) self.skip_factor = 100;
+
+        if (self.skip_factor != old_skip) {
+            self.rebuildChunks() catch |err| {
+                std.debug.print("Failed to rebuild chunks: {}\n", .{err});
+            };
+        }
 
         // Vertigo effect (Dolly Zoom)
         if (rl.isKeyDown(rl.KeyboardKey.q) or rl.isKeyDown(rl.KeyboardKey.w)) {
@@ -308,23 +423,10 @@ pub const GameState = struct {
 
         rl.beginMode3D(self.camera);
 
-        for (0..self.splats.len) |i| {
-            if (i % self.skip_factor != 0) continue;
-            const s = self.splats[i];
-            const color = rl.Color{
-                .r = s.r,
-                .g = s.g,
-                .b = s.b,
-                .a = s.a,
-            };
-            const p = rl.Vector3{ .x = s.pos[0], .y = s.pos[1], .z = s.pos[2] };
-            const size = 0.005;
-            rl.drawTriangle3D(
-                rl.Vector3{ .x = p.x + size, .y = p.y - size, .z = p.z },
-                rl.Vector3{ .x = p.x - size, .y = p.y - size, .z = p.z },
-                rl.Vector3{ .x = p.x, .y = p.y + size, .z = p.z },
-                color,
-            );
+        // Draw chunks
+        const pos = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
+        for (self.chunks.items) |chunk| {
+            rl.drawModel(chunk.model, pos, 1.0, rl.Color.white);
         }
 
         rl.endMode3D();
