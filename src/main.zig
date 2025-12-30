@@ -17,7 +17,29 @@ const CENTER_Z_MAX = 2.0;
 const ROTATION_STOP_CAP = 16;
 const SORT_TRIGGER_FRAME = 15;
 const SORT_CHECK_INTERVAL = 30;
-
+const MENU_RECT_X = 20;
+const MENU_RECT_Y = 20;
+const MENU_RECT_W = 1240;
+const MENU_RECT_H = 760;
+const TITLE_X = 30;
+const TITLE_Y = 30;
+const TITLE_FONT_SIZE = 28;
+const GRID_COLS = 4;
+const FILES_PER_PAGE = 44;
+const GRID_BUTTON_W = 280;
+const GRID_BUTTON_H = 40;
+const GRID_SPACING_X = 10;
+const GRID_SPACING_Y = 10;
+const GRID_START_X = 30;
+const GRID_START_Y = 100;
+const FILENAME_CLIP = 12;
+const PAG_BTN_W = 100;
+const PAG_BTN_H = 40;
+const PAG_BTN_Y = 720;
+const PAG_PREV_X = 30;
+const PAG_NEXT_X = PAG_PREV_X + PAG_BTN_W + 20;
+const INSTR_Y = 700;
+const INSTR_FONT_SIZE = 20;
 const UI = struct {
     const FPS_POS_X = 10;
     const FPS_POS_Y = 10;
@@ -768,6 +790,16 @@ fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
     state.sort_done.store(true, .release);
 }
 
+pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vector2) bool {
+    const is_hovered = rl.checkCollisionPointRec(mouse, rl.Rectangle.init(@floatFromInt(x), @floatFromInt(y), @floatFromInt(w), @floatFromInt(h)));
+    const button_alpha: u8 = if (is_hovered) 150 else 100;
+    rl.drawRectangleRounded(.{ .x = @floatFromInt(x + 3), .y = @floatFromInt(y + 3), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 40 });
+    rl.drawRectangleRounded(.{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = button_alpha });
+    rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(x - 1), .y = @floatFromInt(y - 1), .width = @floatFromInt(GRID_BUTTON_W + 2), .height = @floatFromInt(GRID_BUTTON_H + 2) }, 0.2, 10, rl.Color.sky_blue);
+    rl.drawText(label, x + 10, y + 5, 24, rl.Color.white);
+    return rl.isMouseButtonPressed(rl.MouseButton.left) and is_hovered;
+}
+
 pub fn main() !void {
     const config = GameState.config;
 
@@ -800,75 +832,24 @@ pub fn main() !void {
     var current_page: usize = 0;
     var text_buf: [256]u8 = undefined;
 
-    const MENU_RECT_X = 20;
-    const MENU_RECT_Y = 20;
-    const MENU_RECT_W = 1240;
-    const MENU_RECT_H = 760;
-    const TITLE_X = 30;
-    const TITLE_Y = 30;
-    const TITLE_FONT_SIZE = 28;
-    const GRID_COLS = 4;
-    const FILES_PER_PAGE = 44;
-    const GRID_BUTTON_W = 280;
-    const GRID_BUTTON_H = 40;
-    const GRID_SPACING_X = 10;
-    const GRID_SPACING_Y = 10;
-    const GRID_START_X = 30;
-    const GRID_START_Y = 100;
-    const FILENAME_CLIP = 12;
-    const PAG_BTN_W = 100;
-    const PAG_BTN_H = 40;
-    const PAG_BTN_Y = 720;
-    const PAG_PREV_X = 30;
-    const PAG_NEXT_X = PAG_PREV_X + PAG_BTN_W + 20;
-    const INSTR_Y = 700;
-    const INSTR_FONT_SIZE = 20;
-
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
+        const mouse = rl.getMousePosition();
 
         if (game_state) |*gs| {
             gs.update(dt);
             gs.render();
-
-            // Right-click to return to menu
             if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
                 gs.deinit();
                 game_state = null;
                 selected_file = null;
             }
         } else {
-            // Menu: handle clicks and keys
             if (rl.isKeyPressed(rl.KeyboardKey.f)) rl.toggleFullscreen();
             const files_per_page = FILES_PER_PAGE;
             const total_pages = (file_paths.items.len + files_per_page - 1) / files_per_page;
             const start_idx = current_page * files_per_page;
             const end_idx = @min(start_idx + files_per_page, file_paths.items.len);
-
-            if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
-                const mouse_pos = rl.getMousePosition();
-                for (0..end_idx - start_idx) |local_i| {
-                    const i = start_idx + local_i;
-                    const col = @as(i32, @intCast(local_i % GRID_COLS));
-                    const row = @as(i32, @intCast(local_i / GRID_COLS));
-                    const x = GRID_START_X + col * (GRID_BUTTON_W + GRID_SPACING_X);
-                    const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
-                    if (mouse_pos.x >= @as(f32, @floatFromInt(x)) and mouse_pos.x <= @as(f32, @floatFromInt(x + GRID_BUTTON_W)) and mouse_pos.y >= @as(f32, @floatFromInt(y)) and mouse_pos.y <= @as(f32, @floatFromInt(y + GRID_BUTTON_H))) {
-                        selected_file = i;
-                        game_state = try GameState.initWithIdx(allocator, file_paths.items, i);
-                        break;
-                    }
-                }
-                // Pagination button clicks
-                if (total_pages > 1) {
-                    if (mouse_pos.x >= @as(f32, @floatFromInt(PAG_PREV_X)) and mouse_pos.x <= @as(f32, @floatFromInt(PAG_PREV_X + PAG_BTN_W)) and mouse_pos.y >= @as(f32, @floatFromInt(PAG_BTN_Y)) and mouse_pos.y <= @as(f32, @floatFromInt(PAG_BTN_Y + PAG_BTN_H))) {
-                        if (current_page > 0) current_page -= 1;
-                    }
-                    if (mouse_pos.x >= @as(f32, @floatFromInt(PAG_NEXT_X)) and mouse_pos.x <= @as(f32, @floatFromInt(PAG_NEXT_X + PAG_BTN_W)) and mouse_pos.y >= @as(f32, @floatFromInt(PAG_BTN_Y)) and mouse_pos.y <= @as(f32, @floatFromInt(PAG_BTN_Y + PAG_BTN_H))) {
-                        if (current_page < total_pages - 1) current_page += 1;
-                    }
-                }
-            }
 
             // Draw menu
             rl.beginDrawing();
@@ -885,38 +866,20 @@ pub fn main() !void {
                 const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
                 const clipped = std.mem.sliceTo(path, FILENAME_CLIP);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
-
-                // Check hover
-                const mouse_pos = rl.getMousePosition();
-                const is_hovered = mouse_pos.x >= @as(f32, @floatFromInt(x)) and mouse_pos.x <= @as(f32, @floatFromInt(x + GRID_BUTTON_W)) and mouse_pos.y >= @as(f32, @floatFromInt(y)) and mouse_pos.y <= @as(f32, @floatFromInt(y + GRID_BUTTON_H));
-                const button_alpha: u8 = if (is_hovered) 150 else 100;
-
-                rl.drawRectangleRounded(.{ .x = @floatFromInt(x + 3), .y = @floatFromInt(y + 3), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 40 });
-                rl.drawRectangleRounded(.{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = button_alpha });
-                rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(x - 1), .y = @floatFromInt(y - 1), .width = @floatFromInt(GRID_BUTTON_W + 2), .height = @floatFromInt(GRID_BUTTON_H + 2) }, 0.2, 10, rl.Color.sky_blue);
-                rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.white);
+                if (button(x, y, GRID_BUTTON_W, GRID_BUTTON_H, file_text, mouse)) {
+                    game_state = try GameState.initWithIdx(allocator, file_paths.items, i);
+                }
             }
-            // Pagination buttons if needed
             if (total_pages > 1) {
-                const mouse_pos = rl.getMousePosition();
-                const prev_text = std.fmt.bufPrintZ(&text_buf, "Prev", .{}) catch "Error";
-                const prev_hovered = mouse_pos.x >= @as(f32, @floatFromInt(PAG_PREV_X)) and mouse_pos.x <= @as(f32, @floatFromInt(PAG_PREV_X + PAG_BTN_W)) and mouse_pos.y >= @as(f32, @floatFromInt(PAG_BTN_Y)) and mouse_pos.y <= @as(f32, @floatFromInt(PAG_BTN_Y + PAG_BTN_H));
-                const prev_alpha: u8 = if (prev_hovered) 200 else 180;
-                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_PREV_X + 3), .y = @floatFromInt(PAG_BTN_Y + 3), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_PREV_X), .y = @floatFromInt(PAG_BTN_Y), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = prev_alpha });
-                rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(PAG_PREV_X - 1), .y = @floatFromInt(PAG_BTN_Y - 1), .width = @floatFromInt(PAG_BTN_W + 2), .height = @floatFromInt(PAG_BTN_H + 2) }, 0.2, 10, rl.Color.dark_gray);
-                rl.drawText(prev_text, PAG_PREV_X + 10, PAG_BTN_Y + 5, 24, rl.Color.white);
-
-                const next_text = std.fmt.bufPrintZ(&text_buf, "Next", .{}) catch "Error";
-                const next_hovered = mouse_pos.x >= @as(f32, @floatFromInt(PAG_NEXT_X)) and mouse_pos.x <= @as(f32, @floatFromInt(PAG_NEXT_X + PAG_BTN_W)) and mouse_pos.y >= @as(f32, @floatFromInt(PAG_BTN_Y)) and mouse_pos.y <= @as(f32, @floatFromInt(PAG_BTN_Y + PAG_BTN_H));
-                const next_alpha: u8 = if (next_hovered) 200 else 180;
-                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_NEXT_X + 3), .y = @floatFromInt(PAG_BTN_Y + 3), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_NEXT_X), .y = @floatFromInt(PAG_BTN_Y), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = next_alpha });
-                rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(PAG_NEXT_X - 1), .y = @floatFromInt(PAG_BTN_Y - 1), .width = @floatFromInt(PAG_BTN_W + 2), .height = @floatFromInt(PAG_BTN_H + 2) }, 0.2, 10, rl.Color.dark_gray);
-                rl.drawText(next_text, PAG_NEXT_X + 10, PAG_BTN_Y + 5, 24, rl.Color.white);
+                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Prev", mouse)) {
+                    if (current_page > 0) current_page -= 1;
+                }
+                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next", mouse)) {
+                    if (current_page < total_pages - 1) current_page += 1;
+                }
             }
 
-            rl.drawText("Left-click: Select | Right-click: Back to Browser", TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.white);
+            rl.drawText("Left-click: Select Gaussian Splat | Right-click: Back to Browser", TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.white);
             rl.endDrawing();
         }
     }
