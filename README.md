@@ -16,7 +16,5 @@ A 3D Gaussian splat viewer built with Raylib and Zig.
 ```
 zig build run
 zig build -Doptimize=ReleaseFast upx
-zig build -Dtarget=x86_64-windows -Doptimize=ReleaseFast
+zig build -Dtarget=x86_64-windows -Doptimize=ReleaseFast upx
 ```
-
-## License
