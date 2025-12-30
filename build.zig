@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const exe = b.addExecutable(.{
-        .name = "gaussian_splat_viewer",
+        .name = "3dgs_viewer",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_cmd.addArgs(args);
 
     const upx_step = b.step("upx", "Compress binary");
-    const install_path = b.getInstallPath(.bin, "gaussian_splat_viewer");
+    const install_path = b.getInstallPath(.bin, "3dgs_viewer");
     const compress = b.addSystemCommand(&[_][]const u8{
         "upx",
         "--best",

@@ -491,14 +491,7 @@ pub const GameState = struct {
         if (rl.isKeyPressed(rl.KeyboardKey.space)) {
             self.is_loading = true;
         }
-        // Wheel for distance
-        const wheel = rl.getMouseWheelMove();
-        if (wheel != 0) {
-            self.cam_state.distance *= std.math.pow(f32, 0.9, wheel);
-            self.cam_state.distance = std.math.clamp(self.cam_state.distance, 0.1, 4.0);
-        }
 
-        // Mouse drag for rotation
         if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
             self.cam_state.dragging = true;
             self.cam_state.mouse_start = rl.getMousePosition();
@@ -512,21 +505,19 @@ pub const GameState = struct {
 
         if (self.cam_state.dragging and rl.isMouseButtonDown(rl.MouseButton.left)) {
             const current_pos = rl.getMousePosition();
-            const delta_x = current_pos.x - self.cam_state.mouse_start.x;
-            const delta_y = current_pos.y - self.cam_state.mouse_start.y;
+            const delta_x = self.cam_state.mouse_start.x - current_pos.x;
+            const delta_y = self.cam_state.mouse_start.y - current_pos.y;
             const sensitivity: f32 = 0.001;
-            self.cam_state.theta = self.cam_state.theta_start + delta_x * sensitivity;
+            self.cam_state.theta = self.cam_state.theta_start - delta_x * sensitivity;
             self.cam_state.phi = self.cam_state.phi_start + delta_y * sensitivity;
 
-            const delta_rad: f32 = 30.0 * std.math.pi / 180.0;
+            const delta_rad: f32 = 10.0 * std.math.pi / 180.0;
             self.cam_state.theta = std.math.clamp(self.cam_state.theta, self.cam_state.initial_theta - delta_rad, self.cam_state.initial_theta + delta_rad);
             self.cam_state.phi = std.math.clamp(self.cam_state.phi, self.cam_state.initial_phi - delta_rad, self.cam_state.initial_phi + delta_rad);
 
-            // Clamp phi slightly inside limits [0, pi] to allow full sphere but avoid gimbal lock
             self.cam_state.phi = std.math.clamp(self.cam_state.phi, 0.001, std.math.pi - 0.001);
         }
 
-        // Key bindings for skip factor
         const old_skip = self.skip_factor;
         if (rl.isKeyPressed(rl.KeyboardKey.one)) self.skip_factor = 1;
         if (rl.isKeyPressed(rl.KeyboardKey.two)) self.skip_factor = 2;
@@ -542,7 +533,7 @@ pub const GameState = struct {
 
         // Vertigo effect (Dolly Zoom)
         if (rl.isKeyDown(rl.KeyboardKey.q) or rl.isKeyDown(rl.KeyboardKey.w)) {
-            const zoom_speed = 30.0 * dt;
+            const zoom_speed = 20.0 * dt;
             const current_fov_rad = self.camera.fovy * std.math.pi / 180.0;
             const view_height = 2.0 * self.cam_state.distance * std.math.tan(current_fov_rad / 2.0);
 
@@ -553,22 +544,22 @@ pub const GameState = struct {
                 self.camera.fovy -= zoom_speed;
             }
 
-            self.camera.fovy = std.math.clamp(self.camera.fovy, 1.0, 110.0);
+            self.camera.fovy = std.math.clamp(self.camera.fovy, 2.0, 90.0);
 
             const new_fov_rad = self.camera.fovy * std.math.pi / 180.0;
             self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
         }
 
         if (rl.isKeyDown(rl.KeyboardKey.up) or rl.isKeyDown(rl.KeyboardKey.down)) {
-            const move_speed = 5.0 * dt;
+            const move_speed = 2.0 * dt;
 
-            if (rl.isKeyDown(rl.KeyboardKey.up)) {
+            if (rl.isKeyDown(rl.KeyboardKey.down)) {
                 self.center[2] -= move_speed;
             }
-            if (rl.isKeyDown(rl.KeyboardKey.down)) {
+            if (rl.isKeyDown(rl.KeyboardKey.up)) {
                 self.center[2] += move_speed;
             }
-            self.center[2] = std.math.clamp(self.center[2], -10.0, 10.0);
+            self.center[2] = std.math.clamp(self.center[2], -2, 1.5);
             self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
         }
 
