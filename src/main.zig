@@ -245,6 +245,9 @@ pub const GameState = struct {
     scratch_normals: []f32,
     scratch_colors: []u8,
 
+    frame_count: usize = 0,
+    needs_sort: bool = false,
+
     const SPLATS_PER_CHUNK = 60000;
 
     pub fn init() !GameState {
@@ -290,6 +293,7 @@ pub const GameState = struct {
             .scratch_colors = try allocator.alloc(u8, SPLATS_PER_CHUNK * 6 * 4),
         };
 
+        state.sortSplats();
         try state.rebuildChunks();
 
         return state;
@@ -311,6 +315,29 @@ pub const GameState = struct {
         self.file_paths.deinit(allocator);
     }
 
+    fn sortSplats(self: *GameState) void {
+        const SortContext = struct {
+            cam_pos: [3]f32,
+
+            pub fn lessThan(ctx: @This(), a: Splat, b: Splat) bool {
+                const dx_a = a.pos[0] - ctx.cam_pos[0];
+                const dy_a = a.pos[1] - ctx.cam_pos[1];
+                const dz_a = a.pos[2] - ctx.cam_pos[2];
+                const dist_sq_a = dx_a * dx_a + dy_a * dy_a + dz_a * dz_a;
+
+                const dx_b = b.pos[0] - ctx.cam_pos[0];
+                const dy_b = b.pos[1] - ctx.cam_pos[1];
+                const dz_b = b.pos[2] - ctx.cam_pos[2];
+                const dist_sq_b = dx_b * dx_b + dy_b * dy_b + dz_b * dz_b;
+
+                return dist_sq_a > dist_sq_b;
+            }
+        };
+
+        const ctx = SortContext{ .cam_pos = .{ self.camera.position.x, self.camera.position.y, self.camera.position.z } };
+        std.sort.block(Splat, self.splats, ctx, SortContext.lessThan);
+    }
+
     fn rebuildChunks(self: *GameState) !void {
         for (self.chunks.items) |c| c.deinit();
         self.chunks.clearRetainingCapacity();
@@ -318,8 +345,6 @@ pub const GameState = struct {
         if (self.splats.len == 0) return;
 
         var processed: usize = 0;
-
-        std.debug.print("Building chunks with skip_factor={}...\n", .{self.skip_factor});
 
         while (processed < self.splats.len) {
             const end = @min(processed + SPLATS_PER_CHUNK, self.splats.len);
@@ -425,10 +450,12 @@ pub const GameState = struct {
             }
             processed = end;
         }
-        std.debug.print("Created {} chunks.\n", .{self.chunks.items.len});
     }
 
     pub fn update(self: *GameState, dt: f32) void {
+        self.frame_count += 1;
+        const old_cam_pos = self.camera.position;
+
         if (rl.isKeyPressed(rl.KeyboardKey.space)) {
             const next_idx = (self.current_file_idx + 1) % self.file_paths.items.len;
             const next_path = self.file_paths.items[next_idx];
@@ -441,6 +468,7 @@ pub const GameState = struct {
                 self.vertex_count = res.vertex_count;
                 self.current_file_idx = next_idx;
 
+                self.sortSplats();
                 self.rebuildChunks() catch |err| {
                     std.debug.print("Failed to rebuild chunks: {}\n", .{err});
                 };
@@ -475,11 +503,13 @@ pub const GameState = struct {
             const sensitivity: f32 = 0.001;
             self.cam_state.theta = self.cam_state.theta_start + delta_x * sensitivity;
             self.cam_state.phi = self.cam_state.phi_start + delta_y * sensitivity;
-            self.cam_state.theta = std.math.clamp(self.cam_state.theta, -std.math.pi, std.math.pi);
-            self.cam_state.phi = std.math.clamp(self.cam_state.phi, -std.math.pi / 2.0, std.math.pi / 2.0);
-            const delta_rad: f32 = 20.0 * std.math.pi / 180.0;
+
+            const delta_rad: f32 = 30.0 * std.math.pi / 180.0;
             self.cam_state.theta = std.math.clamp(self.cam_state.theta, self.cam_state.initial_theta - delta_rad, self.cam_state.initial_theta + delta_rad);
             self.cam_state.phi = std.math.clamp(self.cam_state.phi, self.cam_state.initial_phi - delta_rad, self.cam_state.initial_phi + delta_rad);
+
+            // Clamp phi slightly inside limits [0, pi] to allow full sphere but avoid gimbal lock
+            self.cam_state.phi = std.math.clamp(self.cam_state.phi, 0.001, std.math.pi - 0.001);
         }
 
         // Key bindings for skip factor
@@ -535,6 +565,21 @@ pub const GameState = struct {
         const cy = self.cam_state.distance * std.math.cos(self.cam_state.phi);
         const cz = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.sin(self.cam_state.theta);
         self.camera.position = .{ .x = self.center[0] + cx, .y = self.center[1] + cy, .z = self.center[2] + cz };
+
+        if (self.camera.position.x != old_cam_pos.x or
+            self.camera.position.y != old_cam_pos.y or
+            self.camera.position.z != old_cam_pos.z)
+        {
+            self.needs_sort = true;
+        }
+
+        if (self.needs_sort and self.frame_count % 30 == 0) {
+            self.sortSplats();
+            self.rebuildChunks() catch |err| {
+                std.debug.print("Failed to rebuild chunks: {}\n", .{err});
+            };
+            self.needs_sort = false;
+        }
     }
 
     pub fn render(self: *GameState) void {
@@ -550,9 +595,10 @@ pub const GameState = struct {
         rl.gl.rlDisableBackfaceCulling();
         rl.gl.rlDisableDepthMask();
         // Draw chunks
-        const pos = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
+        // const pos = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
         for (self.chunks.items) |chunk| {
-            rl.drawModel(chunk.model, pos, 1.0, rl.Color.white);
+            // rl.drawModel(chunk.model, pos, 1.0, rl.Color.white);
+            rl.drawMesh(chunk.model.meshes[0], chunk.model.materials[0], chunk.model.transform);
         }
         rl.gl.rlEnableDepthMask();
         rl.gl.rlEnableBackfaceCulling();
