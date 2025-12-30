@@ -25,13 +25,13 @@ const Splat = struct {
 };
 
 const PlyLoadResult = struct {
-    ply_data: []u8,
     splats: []Splat,
     vertex_count: usize,
 };
 
 fn loadPly(allocator: std.mem.Allocator, path: []const u8) !PlyLoadResult {
     const ply_data = try std.fs.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize));
+    defer allocator.free(ply_data);
 
     // Find header end
     const header_end = std.mem.indexOf(u8, ply_data, "end_header") orelse return error.InvalidPly;
@@ -106,7 +106,6 @@ fn loadPly(allocator: std.mem.Allocator, path: []const u8) !PlyLoadResult {
     std.debug.print("Finished loading {} vertices from binary PLY\n", .{vertex_count});
 
     return PlyLoadResult{
-        .ply_data = ply_data,
         .splats = splats,
         .vertex_count = vertex_count,
     };
@@ -160,6 +159,29 @@ const Chunk = struct {
     }
 };
 
+const SPLAT_FS =
+    \\#version 330
+    \\
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\out vec4 color;
+    \\
+    \\void main()
+    \\{
+    \\    vec2 center = vec2(0.5, 0.5);
+    \\    vec2 p = fragTexCoord - center;
+    \\    float r2 = dot(p, p);
+    \\
+    \\    if (r2 > 0.5) discard;
+    \\    color.rgb = pow(color.rgb, vec3(1.0/2.2));
+    \\
+    \\    float alpha = exp(-r2 * 10.0);
+    \\    color = fragColor;
+    \\    color.rgb = pow(color.rgb, vec3(1.0/2.2));
+    \\    color.a *= alpha;
+    \\}
+;
+
 pub const GameState = struct {
     pub const config = .{
         .width = WIDTH,
@@ -171,7 +193,6 @@ pub const GameState = struct {
     cam_state: CamState,
     center: [3]f32,
     radius: f32,
-    splat_data: []u8,
     vertex_count: usize,
     splats: []Splat,
     skip_factor: usize = 10,
@@ -181,6 +202,13 @@ pub const GameState = struct {
     current_file_idx: usize,
     chunks: std.ArrayListUnmanaged(Chunk),
     shader: rl.Shader,
+
+    // Scratch buffers for chunk generation
+    scratch_vertices: []f32,
+    scratch_texcoords: []f32,
+    scratch_colors: []u8,
+
+    const SPLATS_PER_CHUNK = 60000;
 
     pub fn init() !GameState {
         const allocator = std.heap.page_allocator;
@@ -204,14 +232,13 @@ pub const GameState = struct {
         const center: [3]f32 = [_]f32{ 0, 0, 0 };
         const cam = initCamera(center);
 
-        const shader = try rl.loadShader(null, "assets/splat.fs");
+        const shader = try rl.loadShaderFromMemory(null, SPLAT_FS);
 
         var state = GameState{
             .camera = cam.camera,
             .cam_state = cam.cam_state,
             .center = center,
             .radius = 10.0,
-            .splat_data = result.ply_data,
             .vertex_count = result.vertex_count,
             .splats = result.splats,
             .allocator = allocator,
@@ -219,6 +246,9 @@ pub const GameState = struct {
             .current_file_idx = current_file_idx,
             .chunks = .{},
             .shader = shader,
+            .scratch_vertices = try allocator.alloc(f32, SPLATS_PER_CHUNK * 6 * 3),
+            .scratch_texcoords = try allocator.alloc(f32, SPLATS_PER_CHUNK * 6 * 2),
+            .scratch_colors = try allocator.alloc(u8, SPLATS_PER_CHUNK * 6 * 4),
         };
 
         try state.rebuildChunks();
@@ -232,7 +262,9 @@ pub const GameState = struct {
         for (self.chunks.items) |c| c.deinit();
         self.chunks.deinit(allocator);
         allocator.free(self.splats);
-        allocator.free(self.splat_data);
+        allocator.free(self.scratch_vertices);
+        allocator.free(self.scratch_texcoords);
+        allocator.free(self.scratch_colors);
         for (self.file_paths.items) |path| {
             allocator.free(path);
         }
@@ -240,46 +272,46 @@ pub const GameState = struct {
     }
 
     fn rebuildChunks(self: *GameState) !void {
-        // Clear old chunks
         for (self.chunks.items) |c| c.deinit();
         self.chunks.clearRetainingCapacity();
 
         if (self.splats.len == 0) return;
 
-        const SPLATS_PER_CHUNK = 60000;
         var processed: usize = 0;
 
         std.debug.print("Building chunks with skip_factor={}...\n", .{self.skip_factor});
 
         while (processed < self.splats.len) {
             const end = @min(processed + SPLATS_PER_CHUNK, self.splats.len);
-
-            // Count actual vertices needed
             var count: usize = 0;
-            for (processed..end) |i| {
-                if (i % self.skip_factor == 0) count += 1;
+            var start_idx = processed;
+            if (start_idx % self.skip_factor != 0) {
+                start_idx += self.skip_factor - (start_idx % self.skip_factor);
+            }
+
+            if (start_idx < end) {
+                count = (end - 1 - start_idx) / self.skip_factor + 1;
             }
 
             if (count > 0) {
                 var mesh = std.mem.zeroes(rl.Mesh);
-                // 2 triangles (6 vertices) per splat for a quad
                 mesh.vertexCount = @intCast(count * 6);
                 mesh.triangleCount = @intCast(count * 2);
 
-                const vertices = try self.allocator.alloc(f32, @as(usize, @intCast(mesh.vertexCount)) * 3);
-                defer self.allocator.free(vertices);
-                const texcoords = try self.allocator.alloc(f32, @as(usize, @intCast(mesh.vertexCount)) * 2);
-                defer self.allocator.free(texcoords);
-                const colors = try self.allocator.alloc(u8, @as(usize, @intCast(mesh.vertexCount)) * 4);
-                defer self.allocator.free(colors);
+                const vertex_float_count = @as(usize, @intCast(mesh.vertexCount)) * 3;
+                const tex_float_count = @as(usize, @intCast(mesh.vertexCount)) * 2;
+                const color_byte_count = @as(usize, @intCast(mesh.vertexCount)) * 4;
+
+                const vertices = self.scratch_vertices[0..vertex_float_count];
+                const texcoords = self.scratch_texcoords[0..tex_float_count];
+                const colors = self.scratch_colors[0..color_byte_count];
 
                 var v_idx: usize = 0;
                 var t_idx: usize = 0;
                 var c_idx: usize = 0;
 
-                for (processed..end) |i| {
-                    if (i % self.skip_factor != 0) continue;
-
+                var i = start_idx;
+                while (i < end) : (i += self.skip_factor) {
                     const s = self.splats[i];
                     const x = s.pos[0];
                     const y = s.pos[1];
@@ -346,7 +378,6 @@ pub const GameState = struct {
 
                 rl.uploadMesh(&mesh, false);
 
-                // Clear pointers so Raylib doesn't try to free our allocator memory
                 mesh.vertices = null;
                 mesh.texcoords = null;
                 mesh.colors = null;
@@ -368,10 +399,8 @@ pub const GameState = struct {
 
             if (loadPly(self.allocator, next_path)) |res| {
                 self.allocator.free(self.splats);
-                self.allocator.free(self.splat_data);
 
                 self.splats = res.splats;
-                self.splat_data = res.ply_data;
                 self.vertex_count = res.vertex_count;
                 self.current_file_idx = next_idx;
 
@@ -419,9 +448,10 @@ pub const GameState = struct {
         // Key bindings for skip factor
         const old_skip = self.skip_factor;
         if (rl.isKeyPressed(rl.KeyboardKey.one)) self.skip_factor = 1;
-        if (rl.isKeyPressed(rl.KeyboardKey.two)) self.skip_factor = 10;
-        if (rl.isKeyPressed(rl.KeyboardKey.three)) self.skip_factor = 50;
-        if (rl.isKeyPressed(rl.KeyboardKey.four)) self.skip_factor = 100;
+        if (rl.isKeyPressed(rl.KeyboardKey.two)) self.skip_factor = 2;
+        if (rl.isKeyPressed(rl.KeyboardKey.three)) self.skip_factor = 5;
+        if (rl.isKeyPressed(rl.KeyboardKey.four)) self.skip_factor = 10;
+        if (rl.isKeyPressed(rl.KeyboardKey.five)) self.skip_factor = 25;
 
         if (self.skip_factor != old_skip) {
             self.rebuildChunks() catch |err| {
