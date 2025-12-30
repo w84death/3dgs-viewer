@@ -3,15 +3,31 @@
 By Krzysztof Krystian Jankowski
 
 ![screenshot](alpha6.png)
+[Download this seagule.ply](https://github.com/w84death/3dgs-viewer/releases/download/alpha6/seagule.ply)
+
 ![screenshot browser](alpha6-browser.png)
 
 ## About
 
 A 3D Gaussian splat viewer built with Raylib and Zig.
 
+## Usage
+
+- Download binary in [Releases](https://github.com/w84death/3dgs-viewer/releases) for your system (Linux 64 or Windows 64).
+- Put **3dgl_viewer** next to the **.ply file**. Download this [seagule.ply](https://github.com/w84death/3dgs-viewer/releases/download/alpha6/seagule.ply) or [fish](https://github.com/w84death/3dgs-viewer/releases/download/alpha2/example.ply) as example.
+- Run:
+
+```
+./3dgl_viewer
+```
+
+or 2x click **3dgl_viewer.exe** Windows.
+
 ## Tech
 - Zig Lang
 - Raylib
+
+
 
 ## Technical Features
 
@@ -38,7 +54,6 @@ The rendering pipeline:
 
 ## Building
 ```
-zig build run
 zig build -Doptimize=ReleaseFast upx
 zig build -Dtarget=x86_64-windows -Doptimize=ReleaseFast upx
 ```
