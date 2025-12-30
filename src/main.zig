@@ -877,9 +877,9 @@ pub fn main() !void {
             // Draw menu
             rl.beginDrawing();
             rl.clearBackground(rl.Color.black);
-            rl.drawRectangle(MENU_RECT_X, MENU_RECT_Y, MENU_RECT_W, MENU_RECT_H, rl.Color.white);
+            rl.drawCircleGradient(MENU_RECT_X + MENU_RECT_W / 2, MENU_RECT_Y + MENU_RECT_H / 2, @floatFromInt(MENU_RECT_H), rl.Color.dark_blue, rl.Color.black);
             const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view (Page {}/{})", .{ current_page + 1, total_pages }) catch "Error";
-            rl.drawText(title, TITLE_X, TITLE_Y, TITLE_FONT_SIZE, rl.Color.black);
+            rl.drawText(title, TITLE_X, TITLE_Y, TITLE_FONT_SIZE, rl.Color.white);
             for (0..end_idx - start_idx) |local_i| {
                 const i = start_idx + local_i;
                 const path = file_paths.items[i];
@@ -889,26 +889,27 @@ pub fn main() !void {
                 const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
                 const clipped = std.mem.sliceTo(path, FILENAME_CLIP);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
-                rl.drawRectangle(x + 3, y + 3, GRID_BUTTON_W, GRID_BUTTON_H, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangle(x, y, GRID_BUTTON_W, GRID_BUTTON_H, rl.Color.light_gray);
-                rl.drawRectangleLines(x - 1, y - 1, GRID_BUTTON_W + 2, GRID_BUTTON_H + 2, rl.Color.dark_gray);
-                rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.black);
+
+                rl.drawRectangleRounded(.{ .x = @floatFromInt(x + 3), .y = @floatFromInt(y + 3), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 40 });
+                rl.drawRectangleRounded(.{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(GRID_BUTTON_W), .height = @floatFromInt(GRID_BUTTON_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = 100 });
+                rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(x - 1), .y = @floatFromInt(y - 1), .width = @floatFromInt(GRID_BUTTON_W + 2), .height = @floatFromInt(GRID_BUTTON_H + 2) }, 0.2, 10, rl.Color.sky_blue);
+                rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.white);
             }
             // Pagination buttons if needed
             if (total_pages > 1) {
                 const prev_text = std.fmt.bufPrintZ(&text_buf, "Prev", .{}) catch "Error";
-                rl.drawRectangle(PAG_PREV_X + 3, PAG_BTN_Y + 3, PAG_BTN_W, PAG_BTN_H, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangle(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, rl.Color.light_gray);
-                rl.drawRectangleLines(PAG_PREV_X - 1, PAG_BTN_Y - 1, PAG_BTN_W + 2, PAG_BTN_H + 2, rl.Color.dark_gray);
-                rl.drawText(prev_text, PAG_PREV_X + 10, PAG_BTN_Y + 5, 24, rl.Color.black);
+                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_PREV_X + 3), .y = @floatFromInt(PAG_BTN_Y + 3), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_PREV_X), .y = @floatFromInt(PAG_BTN_Y), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = 180 });
+                rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(PAG_PREV_X - 1), .y = @floatFromInt(PAG_BTN_Y - 1), .width = @floatFromInt(PAG_BTN_W + 2), .height = @floatFromInt(PAG_BTN_H + 2) }, 0.2, 10, rl.Color.dark_gray);
+                rl.drawText(prev_text, PAG_PREV_X + 10, PAG_BTN_Y + 5, 24, rl.Color.white);
                 const next_text = std.fmt.bufPrintZ(&text_buf, "Next", .{}) catch "Error";
-                rl.drawRectangle(PAG_NEXT_X + 3, PAG_BTN_Y + 3, PAG_BTN_W, PAG_BTN_H, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangle(PAG_NEXT_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, rl.Color.light_gray);
-                rl.drawRectangleLines(PAG_NEXT_X - 1, PAG_BTN_Y - 1, PAG_BTN_W + 2, PAG_BTN_H + 2, rl.Color.dark_gray);
-                rl.drawText(next_text, PAG_NEXT_X + 10, PAG_BTN_Y + 5, 24, rl.Color.black);
+                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_NEXT_X + 3), .y = @floatFromInt(PAG_BTN_Y + 3), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangleRounded(.{ .x = @floatFromInt(PAG_NEXT_X), .y = @floatFromInt(PAG_BTN_Y), .width = @floatFromInt(PAG_BTN_W), .height = @floatFromInt(PAG_BTN_H) }, 0.2, 10, rl.Color{ .r = 211, .g = 211, .b = 211, .a = 180 });
+                rl.drawRectangleRoundedLines(.{ .x = @floatFromInt(PAG_NEXT_X - 1), .y = @floatFromInt(PAG_BTN_Y - 1), .width = @floatFromInt(PAG_BTN_W + 2), .height = @floatFromInt(PAG_BTN_H + 2) }, 0.2, 10, rl.Color.dark_gray);
+                rl.drawText(next_text, PAG_NEXT_X + 10, PAG_BTN_Y + 5, 24, rl.Color.white);
             }
             const instr = std.fmt.bufPrintZ(&text_buf, "Q/E: Prev/Next Page | Left-click: Select | Right-click: Back to Viewer", .{}) catch "Error";
-            rl.drawText(instr, TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.gray);
+            rl.drawText(instr, TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.white);
             rl.endDrawing();
         }
     }
