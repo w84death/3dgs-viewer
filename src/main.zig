@@ -1,7 +1,6 @@
 const Engine = @import("engine/core.zig").Engine;
 const rl = @import("raylib");
 const std = @import("std");
-const Math = @import("engine/math.zig");
 const WIDTH = 1280;
 const HEIGHT = 800;
 const CamState = struct {
