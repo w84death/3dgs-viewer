@@ -214,13 +214,13 @@ pub const GameState = struct {
         const allocator = std.heap.page_allocator;
         var file_paths = std.ArrayListUnmanaged([]const u8){};
 
-        var dir = try std.fs.cwd().openDir("assets", .{ .iterate = true });
+        var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
         defer dir.close();
 
         var it = dir.iterate();
         while (try it.next()) |entry| {
             if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".ply")) {
-                const path = try std.fs.path.join(allocator, &[_][]const u8{ "assets", entry.name });
+                const path = try allocator.dupe(u8, entry.name);
                 try file_paths.append(allocator, path);
             }
         }
