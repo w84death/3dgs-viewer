@@ -448,6 +448,21 @@ pub const GameState = struct {
             self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
         }
 
+        // Move camera target (E/R)
+        if (rl.isKeyDown(rl.KeyboardKey.e) or rl.isKeyDown(rl.KeyboardKey.r)) {
+            const move_speed = 5.0 * dt;
+
+            // Move along Z axis only (World Space)
+            if (rl.isKeyDown(rl.KeyboardKey.e)) {
+                self.center[2] -= move_speed;
+            }
+            if (rl.isKeyDown(rl.KeyboardKey.r)) {
+                self.center[2] += move_speed;
+            }
+            self.center[2] = std.math.clamp(self.center[2], -10.0, 10.0);
+            self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
+        }
+
         // Update camera position
         const cx = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.cos(self.cam_state.theta);
         const cy = self.cam_state.distance * std.math.cos(self.cam_state.phi);
