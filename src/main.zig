@@ -1,4 +1,3 @@
-const Engine = @import("engine/core.zig").Engine;
 const rl = @import("raylib");
 const std = @import("std");
 const Thread = std.Thread;
@@ -254,6 +253,11 @@ pub const GameState = struct {
     sort_done: Atomic = Atomic.init(false),
     rotation_stop_counter: usize = 0,
     is_loading: bool = false,
+    loading_rect_y: i32 = 0,
+    loading_rect_w: i32 = 0,
+    loading_text_x: i32 = 0,
+    loading_text_y: i32 = 0,
+    loading_text_width: i32 = 0,
 
     const SPLATS_PER_CHUNK = 60000;
 
@@ -306,6 +310,7 @@ pub const GameState = struct {
 
         self.sortSplats();
         try self.rebuildChunks();
+        self.updateUI();
 
         return self;
     }
@@ -464,6 +469,11 @@ pub const GameState = struct {
     }
 
     pub fn update(self: *GameState, dt: f32) void {
+        if (rl.isKeyPressed(rl.KeyboardKey.f11)) {
+            rl.toggleFullscreen();
+            self.updateUI();
+        }
+
         self.frame_count += 1;
 
         if (self.is_loading) {
@@ -524,6 +534,7 @@ pub const GameState = struct {
         if (rl.isKeyPressed(rl.KeyboardKey.three)) self.skip_factor = 5;
         if (rl.isKeyPressed(rl.KeyboardKey.four)) self.skip_factor = 10;
         if (rl.isKeyPressed(rl.KeyboardKey.five)) self.skip_factor = 25;
+        if (rl.isKeyReleased(rl.KeyboardKey.f)) rl.toggleFullscreen();
 
         if (self.skip_factor != old_skip) {
             self.rebuildChunks() catch |err| {
@@ -559,7 +570,7 @@ pub const GameState = struct {
             if (rl.isKeyDown(rl.KeyboardKey.up)) {
                 self.center[2] += move_speed;
             }
-            self.center[2] = std.math.clamp(self.center[2], -2, 1.5);
+            self.center[2] = std.math.clamp(self.center[2], -1.0, 2.0);
             self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
         }
 
@@ -628,16 +639,8 @@ pub const GameState = struct {
         rl.endMode3D();
 
         if (self.is_loading) {
-            const rect_height = 40;
-            const rect_y = @divTrunc(h, 2) - rect_height / 2;
-            rl.drawRectangle(0, @intCast(rect_y), w, rect_height, rl.Color.black);
-
-            const text = "LOADING...";
-            const font_size = 20;
-            const text_width = rl.measureText(text, font_size);
-            const text_x = @divTrunc(w - text_width, 2);
-            const text_y = @divTrunc(h, 2) - font_size / 2;
-            rl.drawText(text, @intCast(text_x), @intCast(text_y), font_size, rl.Color.white);
+            rl.drawRectangle(0, self.loading_rect_y, self.loading_rect_w, 40, rl.Color.black);
+            rl.drawText("LOADING...", self.loading_text_x, self.loading_text_y, 20, rl.Color.white);
         }
 
         rl.drawFPS(10, 10);
@@ -645,6 +648,19 @@ pub const GameState = struct {
         const num_rendered = if (self.splats.len == 0) 0 else ((self.splats.len - 1) / self.skip_factor) + 1;
         _ = std.fmt.bufPrintZ(&self.buf, "Rendered points: {}", .{num_rendered}) catch "Error";
         rl.drawText(@ptrCast(&self.buf), 10, 30, 20, rl.Color.white);
+    }
+
+    fn updateUI(self: *GameState) void {
+        const w = rl.getScreenWidth();
+        const h = rl.getScreenHeight();
+        const rect_height = 40;
+        self.loading_rect_y = @divTrunc(h, 2) - @divTrunc(rect_height, 2);
+        self.loading_rect_w = w;
+        const text = "LOADING...";
+        const font_size = 20;
+        self.loading_text_width = rl.measureText(text, font_size);
+        self.loading_text_x = @divTrunc(w - self.loading_text_width, 2);
+        self.loading_text_y = @divTrunc(h, 2) - @divTrunc(font_size, 2);
     }
 };
 
@@ -673,5 +689,18 @@ fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
 }
 
 pub fn main() !void {
-    try Engine.run(GameState);
+    const config = GameState.config;
+
+    rl.initWindow(config.width, config.height, config.title);
+    defer rl.closeWindow();
+    rl.setTargetFPS(config.target_fps);
+
+    var game_state = try GameState.init();
+    defer game_state.deinit();
+
+    while (!rl.windowShouldClose()) {
+        const dt = rl.getFrameTime();
+        game_state.update(dt);
+        game_state.render();
+    }
 }

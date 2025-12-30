@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
+        .raudio = false,
     });
     const exe = b.addExecutable(.{
         .name = "3dgs_viewer",
