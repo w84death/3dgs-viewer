@@ -557,7 +557,6 @@ pub const GameState = struct {
         for (skip_keys) |sk| {
             if (rl.isKeyPressed(sk.key)) self.skip_factor = sk.value;
         }
-        if (rl.isKeyPressed(rl.KeyboardKey.five)) self.skip_factor = 25;
         if (rl.isKeyPressed(rl.KeyboardKey.eight)) self.splat_scale = 2.0;
         if (rl.isKeyPressed(rl.KeyboardKey.nine)) self.splat_scale = 4.0;
         if (rl.isKeyPressed(rl.KeyboardKey.zero)) self.splat_scale = 8.0;
@@ -585,29 +584,21 @@ pub const GameState = struct {
             self.cam_state.phi = std.math.clamp(self.cam_state.phi, CAMERA_PHI_MIN, CAMERA_PHI_MAX);
         }
 
-        // Vertigo effect (Dolly Zoom)
-        var fov_delta: f32 = 0;
-        if (rl.isKeyDown(rl.KeyboardKey.w)) fov_delta += ZOOM_SPEED_BASE * dt;
-        if (rl.isKeyDown(rl.KeyboardKey.q)) fov_delta -= ZOOM_SPEED_BASE * dt;
-        if (fov_delta != 0) {
-            const old_fov_rad = self.camera.fovy * std.math.pi / 180.0;
-            const view_height = 2.0 * self.cam_state.distance * std.math.tan(old_fov_rad / 2.0);
-            self.camera.fovy += fov_delta;
-            self.camera.fovy = std.math.clamp(self.camera.fovy, FOV_MIN, FOV_MAX);
-            const new_fov_rad = self.camera.fovy * std.math.pi / 180.0;
-            self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
-            self.cam_state.distance = std.math.clamp(self.cam_state.distance, DISTANCE_MIN, DISTANCE_MAX);
+        if ((rl.isKeyDown(rl.KeyboardKey.w) or (rl.isKeyDown(rl.KeyboardKey.q)))) {
+            // Vertigo effect (Dolly Zoom)
+            var fov_delta: f32 = 0;
+            if (rl.isKeyDown(rl.KeyboardKey.w)) fov_delta += ZOOM_SPEED_BASE * dt;
+            if (rl.isKeyDown(rl.KeyboardKey.q)) fov_delta -= ZOOM_SPEED_BASE * dt;
+            if (fov_delta != 0) {
+                const old_fov_rad = self.camera.fovy * std.math.pi / 180.0;
+                const view_height = 2.0 * self.cam_state.distance * std.math.tan(old_fov_rad / 2.0);
+                self.camera.fovy += fov_delta;
+                self.camera.fovy = std.math.clamp(self.camera.fovy, FOV_MIN, FOV_MAX);
+                const new_fov_rad = self.camera.fovy * std.math.pi / 180.0;
+                self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
+                self.cam_state.distance = std.math.clamp(self.cam_state.distance, DISTANCE_MIN, DISTANCE_MAX);
+            }
         }
-
-        var z_delta: f32 = 0;
-        if (rl.isKeyDown(rl.KeyboardKey.up)) z_delta += MOVE_SPEED_BASE * dt;
-        if (rl.isKeyDown(rl.KeyboardKey.down)) z_delta -= MOVE_SPEED_BASE * dt;
-        if (z_delta != 0) {
-            self.center[2] += z_delta;
-            self.center[2] = std.math.clamp(self.center[2], CENTER_Z_MIN, CENTER_Z_MAX);
-            self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
-        }
-
         const cx = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.cos(self.cam_state.theta);
         const cy = self.cam_state.distance * std.math.cos(self.cam_state.phi);
         const cz = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.sin(self.cam_state.theta);
