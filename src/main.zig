@@ -4,6 +4,31 @@ const Thread = std.Thread;
 const Atomic = std.atomic.Value(bool);
 const WIDTH = 1280;
 const HEIGHT = 800;
+const MOUSE_SENSITIVITY = 0.001;
+const CAMERA_DELTA_RAD = 10.0 * std.math.pi / 180.0;
+const CAMERA_PHI_MIN = 0.001;
+const CAMERA_PHI_MAX = std.math.pi - 0.001;
+const ZOOM_SPEED_BASE = 20.0;
+const MOVE_SPEED_BASE = 2.0;
+const FOV_MIN = 2.0;
+const FOV_MAX = 90.0;
+const CENTER_Z_MIN = -1.0;
+const CENTER_Z_MAX = 2.0;
+const ROTATION_STOP_CAP = 16;
+const SORT_TRIGGER_FRAME = 15;
+const SORT_CHECK_INTERVAL = 30;
+const FPS_POS_X = 10;
+const FPS_POS_Y = 10;
+const POINTS_POS_X = 10;
+const POINTS_POS_Y = 30;
+const POINTS_FONT_SIZE = 20;
+const LOADING_RECT_X = 10;
+const LOADING_RECT_Y = 40;
+const LOADING_RECT_W = 100;
+const LOADING_RECT_H = 25;
+const LOADING_TEXT_X = 15;
+const LOADING_TEXT_Y = 45;
+const LOADING_FONT_SIZE = 16;
 
 const CamState = struct {
     distance: f32,
@@ -516,15 +541,13 @@ pub const GameState = struct {
             const current_pos = rl.getMousePosition();
             const delta_x = self.cam_state.mouse_start.x - current_pos.x;
             const delta_y = self.cam_state.mouse_start.y - current_pos.y;
-            const sensitivity: f32 = 0.001;
-            self.cam_state.theta = self.cam_state.theta_start - delta_x * sensitivity;
-            self.cam_state.phi = self.cam_state.phi_start + delta_y * sensitivity;
+            self.cam_state.theta = self.cam_state.theta_start - delta_x * MOUSE_SENSITIVITY;
+            self.cam_state.phi = self.cam_state.phi_start + delta_y * MOUSE_SENSITIVITY;
 
-            const delta_rad: f32 = 10.0 * std.math.pi / 180.0;
-            self.cam_state.theta = std.math.clamp(self.cam_state.theta, self.cam_state.initial_theta - delta_rad, self.cam_state.initial_theta + delta_rad);
-            self.cam_state.phi = std.math.clamp(self.cam_state.phi, self.cam_state.initial_phi - delta_rad, self.cam_state.initial_phi + delta_rad);
+            self.cam_state.theta = std.math.clamp(self.cam_state.theta, self.cam_state.initial_theta - CAMERA_DELTA_RAD, self.cam_state.initial_theta + CAMERA_DELTA_RAD);
+            self.cam_state.phi = std.math.clamp(self.cam_state.phi, self.cam_state.initial_phi - CAMERA_DELTA_RAD, self.cam_state.initial_phi + CAMERA_DELTA_RAD);
 
-            self.cam_state.phi = std.math.clamp(self.cam_state.phi, 0.001, std.math.pi - 0.001);
+            self.cam_state.phi = std.math.clamp(self.cam_state.phi, CAMERA_PHI_MIN, CAMERA_PHI_MAX);
         }
 
         const old_skip = self.skip_factor;
@@ -548,11 +571,11 @@ pub const GameState = struct {
 
         // Vertigo effect (Dolly Zoom)
         var fov_delta: f32 = 0;
-        if (rl.isKeyDown(rl.KeyboardKey.w)) fov_delta += 20.0 * dt;
-        if (rl.isKeyDown(rl.KeyboardKey.q)) fov_delta -= 20.0 * dt;
+        if (rl.isKeyDown(rl.KeyboardKey.w)) fov_delta += ZOOM_SPEED_BASE * dt;
+        if (rl.isKeyDown(rl.KeyboardKey.q)) fov_delta -= ZOOM_SPEED_BASE * dt;
         if (fov_delta != 0) {
             self.camera.fovy += fov_delta;
-            self.camera.fovy = std.math.clamp(self.camera.fovy, 2.0, 90.0);
+            self.camera.fovy = std.math.clamp(self.camera.fovy, FOV_MIN, FOV_MAX);
             const current_fov_rad = self.camera.fovy * std.math.pi / 180.0;
             const view_height = 2.0 * self.cam_state.distance * std.math.tan(current_fov_rad / 2.0);
             const new_fov_rad = self.camera.fovy * std.math.pi / 180.0;
@@ -560,11 +583,11 @@ pub const GameState = struct {
         }
 
         var z_delta: f32 = 0;
-        if (rl.isKeyDown(rl.KeyboardKey.up)) z_delta += 2.0 * dt;
-        if (rl.isKeyDown(rl.KeyboardKey.down)) z_delta -= 2.0 * dt;
+        if (rl.isKeyDown(rl.KeyboardKey.up)) z_delta += MOVE_SPEED_BASE * dt;
+        if (rl.isKeyDown(rl.KeyboardKey.down)) z_delta -= MOVE_SPEED_BASE * dt;
         if (z_delta != 0) {
             self.center[2] += z_delta;
-            self.center[2] = std.math.clamp(self.center[2], -1.0, 2.0);
+            self.center[2] = std.math.clamp(self.center[2], CENTER_Z_MIN, CENTER_Z_MAX);
             self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
         }
 
@@ -576,8 +599,8 @@ pub const GameState = struct {
         if (self.cam_state.dragging) {
             self.rotation_stop_counter = 0;
         } else {
-            self.rotation_stop_counter = @min(self.rotation_stop_counter + 1, 16); // Cap to avoid overflow, 31 > 30
-            if (self.rotation_stop_counter == 15) {
+            self.rotation_stop_counter = @min(self.rotation_stop_counter + 1, ROTATION_STOP_CAP); // Cap to avoid overflow, 31 > 30
+            if (self.rotation_stop_counter == SORT_TRIGGER_FRAME) {
                 self.needs_sort = true;
             }
         }
@@ -599,7 +622,7 @@ pub const GameState = struct {
             }
         }
 
-        if (self.needs_sort and self.frame_count % 30 == 0 and self.sort_thread == null) {
+        if (self.needs_sort and self.frame_count % SORT_CHECK_INTERVAL == 0 and self.sort_thread == null) {
             // Copy to background and spawn sort thread
             if (self.background_splats.len != self.splats.len) {
                 self.allocator.free(self.background_splats);
@@ -631,14 +654,14 @@ pub const GameState = struct {
         rl.endMode3D();
 
         if (self.is_loading) {
-            rl.drawRectangle(10, 65, 140, 40, rl.Color.black);
-            rl.drawText("LOADING...", 20, 75, 20, rl.Color.white);
+            rl.drawRectangle(LOADING_RECT_X, LOADING_RECT_Y, LOADING_RECT_W, LOADING_RECT_H, rl.Color.black);
+            rl.drawText("LOADING...", LOADING_TEXT_X, LOADING_TEXT_Y, LOADING_FONT_SIZE, rl.Color.white);
         }
 
-        rl.drawFPS(10, 10);
+        rl.drawFPS(FPS_POS_X, FPS_POS_Y);
 
         _ = std.fmt.bufPrintZ(&self.buf, "Rendered points: {}", .{self.rendered_splats_count}) catch "Error";
-        rl.drawText(@ptrCast(&self.buf), 10, 30, 20, rl.Color.white);
+        rl.drawText(@ptrCast(&self.buf), POINTS_POS_X, POINTS_POS_Y, POINTS_FONT_SIZE, rl.Color.white);
     }
 };
 
