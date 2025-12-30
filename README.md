@@ -2,7 +2,8 @@
 
 By Krzysztof Krystian Jankowski
 
-![screenshot](alpha2.png)
+![screenshot](alpha6.png)
+![screenshot browser](alpha6-browser.png)
 
 ## About
 
