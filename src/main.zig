@@ -799,6 +799,7 @@ pub fn main() !void {
 
     var game_state: ?GameState = null;
     var selected_file: ?usize = null;
+    var current_page: usize = 0;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
@@ -814,12 +815,34 @@ pub fn main() !void {
                 selected_file = null;
             }
         } else {
-            // Menu: handle clicks
+            // Menu: handle clicks and keys
+            if (rl.isKeyPressed(rl.KeyboardKey.f)) rl.toggleFullscreen();
+            const files_per_page = 20;
+            const total_pages = (file_paths.items.len + files_per_page - 1) / files_per_page;
+            // TODO: persist current_page across sessions if needed
+
+            if (rl.isKeyPressed(rl.KeyboardKey.q) and current_page > 0) current_page -= 1;
+            if (rl.isKeyPressed(rl.KeyboardKey.e) and current_page < total_pages - 1) current_page += 1;
+
+            const start_idx = current_page * files_per_page;
+            const end_idx = @min(start_idx + files_per_page, file_paths.items.len);
+
             if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
                 const mouse_pos = rl.getMousePosition();
-                for (file_paths.items, 0..) |_, i| {
-                    const rect_y = 90 + @as(i32, @intCast(i)) * 30;
-                    if (mouse_pos.x >= 70 and mouse_pos.x <= 690 and mouse_pos.y >= @as(f32, @floatFromInt(rect_y - 2)) and mouse_pos.y <= @as(f32, @floatFromInt(rect_y + 28))) {
+                const cols = 4;
+                const button_w = 280;
+                const button_h = 40;
+                const spacing_x = 10;
+                const spacing_y = 10;
+                const start_x = 30;
+                const start_y = 100;
+                for (0..end_idx - start_idx) |local_i| {
+                    const i = start_idx + local_i;
+                    const col = @as(i32, @intCast(local_i % cols));
+                    const row = @as(i32, @intCast(local_i / cols));
+                    const x = start_x + col * (button_w + spacing_x);
+                    const y = start_y + row * (button_h + spacing_y);
+                    if (mouse_pos.x >= @as(f32, @floatFromInt(x)) and mouse_pos.x <= @as(f32, @floatFromInt(x + button_w)) and mouse_pos.y >= @as(f32, @floatFromInt(y)) and mouse_pos.y <= @as(f32, @floatFromInt(y + button_h))) {
                         selected_file = i;
                         game_state = try GameState.initWithIdx(allocator, file_paths.items, i);
                         break;
@@ -830,29 +853,31 @@ pub fn main() !void {
             // Draw menu
             rl.beginDrawing();
             rl.clearBackground(rl.Color.black);
-            rl.drawRectangle(50, 50, 700, 500, rl.Color.white);
-            const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view:", .{}) catch "Error";
-            rl.drawText(title, 60, 60, 24, rl.Color.black);
-            const cols = 3;
-            const button_w = 200;
-            const button_h = 35;
+            rl.drawRectangle(20, 20, 1240, 760, rl.Color.white);
+            const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view (Page {}/{})", .{ current_page + 1, total_pages }) catch "Error";
+            rl.drawText(title, 30, 30, 28, rl.Color.black);
+            const cols = 4;
+            const button_w = 280;
+            const button_h = 40;
             const spacing_x = 10;
             const spacing_y = 10;
-            const start_x = 60;
-            const start_y = 90;
-            for (file_paths.items, 0..) |path, i| {
-                const col = @as(i32, @intCast(i % cols));
-                const row = @as(i32, @intCast(i / cols));
+            const start_x = 30;
+            const start_y = 100;
+            for (0..end_idx - start_idx) |local_i| {
+                const i = start_idx + local_i;
+                const path = file_paths.items[i];
+                const col = @as(i32, @intCast(local_i % cols));
+                const row = @as(i32, @intCast(local_i / cols));
                 const x = start_x + col * (button_w + spacing_x);
                 const y = start_y + row * (button_h + spacing_y);
-                // Clip filename to 16 chars
-                const clipped = std.mem.sliceTo(path, 16);
+                // Clip filename to 18 chars
+                const clipped = std.mem.sliceTo(path, 18);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
                 rl.drawRectangleLines(x, y, button_w, button_h, rl.Color.black);
                 rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.black);
             }
-            const instr = std.fmt.bufPrintZ(&text_buf, "Left-click to select, Right-click to back to this menu", .{}) catch "Error";
-            rl.drawText(instr, 60, 520, 18, rl.Color.gray);
+            const instr = std.fmt.bufPrintZ(&text_buf, "Q/E: Prev/Next Page | Left-click: Select | Right-click: Back to Viewer", .{}) catch "Error";
+            rl.drawText(instr, 30, 720, 20, rl.Color.gray);
             rl.endDrawing();
         }
     }
