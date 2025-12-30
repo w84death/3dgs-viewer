@@ -211,7 +211,7 @@ const SPLAT_VS =
     \\    fragColor = vertexColor;
     \\
     \\    vec3 center = vertexPosition;
-    \\    vec2 size = vertexNormal.xy * 4.0;
+    \\    vec2 size = vertexNormal.xy * 2.0;
     \\
     \\    vec3 right = vec3(matView[0][0], matView[1][0], matView[2][0]);
     \\    vec3 up    = vec3(matView[0][1], matView[1][1], matView[2][1]);
@@ -261,10 +261,10 @@ pub const GameState = struct {
     vertex_count: usize,
     rendered_splats_count: usize = 0,
     splats: []Splat,
-    skip_factor: usize = 10,
+    skip_factor: usize = 1,
     buf: [64]u8 = undefined,
     allocator: std.mem.Allocator,
-    file_paths: std.ArrayListUnmanaged([]const u8),
+    file_paths: []const []const u8,
     current_file_idx: usize,
     chunks: std.ArrayListUnmanaged(Chunk),
     shader: rl.Shader,
@@ -285,25 +285,10 @@ pub const GameState = struct {
 
     const SPLATS_PER_CHUNK = 60000;
 
-    pub fn init() !GameState {
-        const allocator = std.heap.page_allocator;
-        var file_paths = std.ArrayListUnmanaged([]const u8){};
+    pub fn initWithIdx(allocator: std.mem.Allocator, file_paths: []const []const u8, file_idx: usize) !GameState {
+        if (file_idx >= file_paths.len) return error.InvalidIndex;
 
-        var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
-        defer dir.close();
-
-        var it = dir.iterate();
-        while (try it.next()) |entry| {
-            if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".ply")) {
-                const path = try allocator.dupe(u8, entry.name);
-                try file_paths.append(allocator, path);
-            }
-        }
-
-        if (file_paths.items.len == 0) return error.NoPlyFilesFound;
-
-        const current_file_idx = 0;
-        const result = try loadPly(allocator, file_paths.items[current_file_idx]);
+        const result = try loadPly(allocator, file_paths[file_idx]);
         const center: [3]f32 = [_]f32{ 0, 0, 0 };
         const cam = initCamera(center);
 
@@ -318,9 +303,10 @@ pub const GameState = struct {
             .radius = 10.0,
             .vertex_count = result.vertex_count,
             .splats = result.splats,
+            .skip_factor = 1,
             .allocator = allocator,
             .file_paths = file_paths,
-            .current_file_idx = current_file_idx,
+            .current_file_idx = file_idx,
             .chunks = try std.ArrayList(Chunk).initCapacity(allocator, 0),
             .shader = shader,
             .scratch_vertices = try allocator.alloc(f32, SPLATS_PER_CHUNK * 6 * 3),
@@ -347,10 +333,7 @@ pub const GameState = struct {
         allocator.free(self.scratch_texcoords);
         allocator.free(self.scratch_normals);
         allocator.free(self.scratch_colors);
-        for (self.file_paths.items) |path| {
-            allocator.free(path);
-        }
-        self.file_paths.deinit(allocator);
+        self.chunks.deinit(self.allocator);
     }
 
     fn sortSplats(self: *GameState) void {
@@ -651,8 +634,8 @@ pub const GameState = struct {
         self.frame_count += 1;
 
         if (self.is_loading) {
-            const next_idx = (self.current_file_idx + 1) % self.file_paths.items.len;
-            const next_path = self.file_paths.items[next_idx];
+            const next_idx = (self.current_file_idx + 1) % self.file_paths.len;
+            const next_path = self.file_paths[next_idx];
             std.debug.print("Loading {s}...\n", .{next_path});
 
             if (loadPly(self.allocator, next_path)) |res| {
@@ -785,12 +768,73 @@ pub fn main() !void {
     defer rl.closeWindow();
     rl.setTargetFPS(config.target_fps);
 
-    var game_state = try GameState.init();
-    defer game_state.deinit();
+    var allocator = std.heap.page_allocator;
+    var file_paths = std.ArrayListUnmanaged([]const u8){};
+    defer {
+        for (file_paths.items) |path| allocator.free(path);
+        file_paths.deinit(allocator);
+    }
+
+    var text_buf: [256]u8 = undefined;
+
+    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
+    defer dir.close();
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".ply")) {
+            const path = try allocator.dupe(u8, entry.name);
+            try file_paths.append(allocator, path);
+        }
+    }
+
+    if (file_paths.items.len == 0) return error.NoPlyFilesFound;
+
+    var game_state: ?GameState = null;
+    var selected_file: ?usize = null;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
-        game_state.update(dt);
-        game_state.render();
+
+        if (game_state) |*gs| {
+            gs.update(dt);
+            gs.render();
+
+            // Right-click to return to menu
+            if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
+                gs.deinit();
+                game_state = null;
+                selected_file = null;
+            }
+        } else {
+            // Menu: handle clicks
+            if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
+                const mouse_pos = rl.getMousePosition();
+                for (file_paths.items, 0..) |_, i| {
+                    const rect_y = 90 + @as(i32, @intCast(i)) * 30;
+                    if (mouse_pos.x >= 70 and mouse_pos.x <= 690 and mouse_pos.y >= @as(f32, @floatFromInt(rect_y - 2)) and mouse_pos.y <= @as(f32, @floatFromInt(rect_y + 28))) {
+                        selected_file = i;
+                        game_state = try GameState.initWithIdx(allocator, file_paths.items, i);
+                        break;
+                    }
+                }
+            }
+
+            // Draw menu
+            rl.beginDrawing();
+            rl.clearBackground(rl.Color.black);
+            rl.drawRectangle(50, 50, 700, 500, rl.Color.white);
+            const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view:", .{}) catch "Error";
+            rl.drawText(title, 60, 60, 24, rl.Color.black);
+            for (file_paths.items, 0..) |path, i| {
+                const y = 90 + @as(i32, @intCast(i)) * 30;
+                const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{path}) catch "Error";
+                rl.drawRectangleLines(70, y - 2, 620, 30, rl.Color.black);
+                rl.drawText(file_text, 80, y, 20, rl.Color.black);
+            }
+            const instr = std.fmt.bufPrintZ(&text_buf, "Left-click to select, Right-click does nothing", .{}) catch "Error";
+            rl.drawText(instr, 60, 520, 18, rl.Color.gray);
+            rl.endDrawing();
+        }
     }
 }
