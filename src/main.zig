@@ -782,8 +782,6 @@ pub fn main() !void {
         file_paths.deinit(allocator);
     }
 
-    var text_buf: [256]u8 = undefined;
-
     var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
     defer dir.close();
 
@@ -800,6 +798,31 @@ pub fn main() !void {
     var game_state: ?GameState = null;
     var selected_file: ?usize = null;
     var current_page: usize = 0;
+    var text_buf: [256]u8 = undefined;
+
+    const MENU_RECT_X = 20;
+    const MENU_RECT_Y = 20;
+    const MENU_RECT_W = 1240;
+    const MENU_RECT_H = 760;
+    const TITLE_X = 30;
+    const TITLE_Y = 30;
+    const TITLE_FONT_SIZE = 28;
+    const GRID_COLS = 4;
+    const FILES_PER_PAGE = 44;
+    const GRID_BUTTON_W = 280;
+    const GRID_BUTTON_H = 40;
+    const GRID_SPACING_X = 10;
+    const GRID_SPACING_Y = 10;
+    const GRID_START_X = 30;
+    const GRID_START_Y = 100;
+    const FILENAME_CLIP = 18;
+    const PAG_BTN_W = 100;
+    const PAG_BTN_H = 40;
+    const PAG_BTN_Y = 720;
+    const PAG_PREV_X = 30;
+    const PAG_NEXT_X = PAG_PREV_X + PAG_BTN_W + 20;
+    const INSTR_Y = 700;
+    const INSTR_FONT_SIZE = 20;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
@@ -817,9 +840,8 @@ pub fn main() !void {
         } else {
             // Menu: handle clicks and keys
             if (rl.isKeyPressed(rl.KeyboardKey.f)) rl.toggleFullscreen();
-            const files_per_page = 20;
+            const files_per_page = FILES_PER_PAGE;
             const total_pages = (file_paths.items.len + files_per_page - 1) / files_per_page;
-            // TODO: persist current_page across sessions if needed
 
             if (rl.isKeyPressed(rl.KeyboardKey.q) and current_page > 0) current_page -= 1;
             if (rl.isKeyPressed(rl.KeyboardKey.e) and current_page < total_pages - 1) current_page += 1;
@@ -829,23 +851,25 @@ pub fn main() !void {
 
             if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
                 const mouse_pos = rl.getMousePosition();
-                const cols = 4;
-                const button_w = 280;
-                const button_h = 40;
-                const spacing_x = 10;
-                const spacing_y = 10;
-                const start_x = 30;
-                const start_y = 100;
                 for (0..end_idx - start_idx) |local_i| {
                     const i = start_idx + local_i;
-                    const col = @as(i32, @intCast(local_i % cols));
-                    const row = @as(i32, @intCast(local_i / cols));
-                    const x = start_x + col * (button_w + spacing_x);
-                    const y = start_y + row * (button_h + spacing_y);
-                    if (mouse_pos.x >= @as(f32, @floatFromInt(x)) and mouse_pos.x <= @as(f32, @floatFromInt(x + button_w)) and mouse_pos.y >= @as(f32, @floatFromInt(y)) and mouse_pos.y <= @as(f32, @floatFromInt(y + button_h))) {
+                    const col = @as(i32, @intCast(local_i % GRID_COLS));
+                    const row = @as(i32, @intCast(local_i / GRID_COLS));
+                    const x = GRID_START_X + col * (GRID_BUTTON_W + GRID_SPACING_X);
+                    const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
+                    if (mouse_pos.x >= @as(f32, @floatFromInt(x)) and mouse_pos.x <= @as(f32, @floatFromInt(x + GRID_BUTTON_W)) and mouse_pos.y >= @as(f32, @floatFromInt(y)) and mouse_pos.y <= @as(f32, @floatFromInt(y + GRID_BUTTON_H))) {
                         selected_file = i;
                         game_state = try GameState.initWithIdx(allocator, file_paths.items, i);
                         break;
+                    }
+                }
+                // Pagination button clicks
+                if (total_pages > 1) {
+                    if (mouse_pos.x >= @as(f32, @floatFromInt(PAG_PREV_X)) and mouse_pos.x <= @as(f32, @floatFromInt(PAG_PREV_X + PAG_BTN_W)) and mouse_pos.y >= @as(f32, @floatFromInt(PAG_BTN_Y)) and mouse_pos.y <= @as(f32, @floatFromInt(PAG_BTN_Y + PAG_BTN_H))) {
+                        if (current_page > 0) current_page -= 1;
+                    }
+                    if (mouse_pos.x >= @as(f32, @floatFromInt(PAG_NEXT_X)) and mouse_pos.x <= @as(f32, @floatFromInt(PAG_NEXT_X + PAG_BTN_W)) and mouse_pos.y >= @as(f32, @floatFromInt(PAG_BTN_Y)) and mouse_pos.y <= @as(f32, @floatFromInt(PAG_BTN_Y + PAG_BTN_H))) {
+                        if (current_page < total_pages - 1) current_page += 1;
                     }
                 }
             }
@@ -853,56 +877,38 @@ pub fn main() !void {
             // Draw menu
             rl.beginDrawing();
             rl.clearBackground(rl.Color.black);
-            rl.drawRectangle(20, 20, 1240, 760, rl.Color.white);
+            rl.drawRectangle(MENU_RECT_X, MENU_RECT_Y, MENU_RECT_W, MENU_RECT_H, rl.Color.white);
             const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view (Page {}/{})", .{ current_page + 1, total_pages }) catch "Error";
-            rl.drawText(title, 30, 30, 28, rl.Color.black);
-            const cols = 4;
-            const button_w = 280;
-            const button_h = 40;
-            const spacing_x = 10;
-            const spacing_y = 10;
-            const start_x = 30;
-            const start_y = 100;
+            rl.drawText(title, TITLE_X, TITLE_Y, TITLE_FONT_SIZE, rl.Color.black);
             for (0..end_idx - start_idx) |local_i| {
                 const i = start_idx + local_i;
                 const path = file_paths.items[i];
-                const col = @as(i32, @intCast(local_i % cols));
-                const row = @as(i32, @intCast(local_i / cols));
-                const x = start_x + col * (button_w + spacing_x);
-                const y = start_y + row * (button_h + spacing_y);
-                // Shadow
-                rl.drawRectangle(x + 3, y + 3, button_w, button_h, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                // Button background
-                rl.drawRectangle(x, y, button_w, button_h, rl.Color.light_gray);
-                // Rim
-                rl.drawRectangleLines(x - 1, y - 1, button_w + 2, button_h + 2, rl.Color.dark_gray);
-                // Clip filename to 18 chars
-                const clipped = std.mem.sliceTo(path, 18);
+                const col = @as(i32, @intCast(local_i % GRID_COLS));
+                const row = @as(i32, @intCast(local_i / GRID_COLS));
+                const x = GRID_START_X + col * (GRID_BUTTON_W + GRID_SPACING_X);
+                const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
+                const clipped = std.mem.sliceTo(path, FILENAME_CLIP);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
+                rl.drawRectangle(x + 3, y + 3, GRID_BUTTON_W, GRID_BUTTON_H, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangle(x, y, GRID_BUTTON_W, GRID_BUTTON_H, rl.Color.light_gray);
+                rl.drawRectangleLines(x - 1, y - 1, GRID_BUTTON_W + 2, GRID_BUTTON_H + 2, rl.Color.dark_gray);
                 rl.drawText(file_text, x + 10, y + 5, 24, rl.Color.black);
             }
             // Pagination buttons if needed
             if (total_pages > 1) {
-                const btn_w = 100;
-                const btn_h = 40;
-                const btn_y = 720;
-                // Prev button
-                const prev_x = 30;
-                rl.drawRectangle(prev_x + 3, btn_y + 3, btn_w, btn_h, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangle(prev_x, btn_y, btn_w, btn_h, rl.Color.light_gray);
-                rl.drawRectangleLines(prev_x - 1, btn_y - 1, btn_w + 2, btn_h + 2, rl.Color.dark_gray);
                 const prev_text = std.fmt.bufPrintZ(&text_buf, "Prev", .{}) catch "Error";
-                rl.drawText(prev_text, prev_x + 25, btn_y + 8, 24, rl.Color.black);
-                // Next button
-                const next_x = prev_x + btn_w + 20;
-                rl.drawRectangle(next_x + 3, btn_y + 3, btn_w, btn_h, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
-                rl.drawRectangle(next_x, btn_y, btn_w, btn_h, rl.Color.light_gray);
-                rl.drawRectangleLines(next_x - 1, btn_y - 1, btn_w + 2, btn_h + 2, rl.Color.dark_gray);
+                rl.drawRectangle(PAG_PREV_X + 3, PAG_BTN_Y + 3, PAG_BTN_W, PAG_BTN_H, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangle(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, rl.Color.light_gray);
+                rl.drawRectangleLines(PAG_PREV_X - 1, PAG_BTN_Y - 1, PAG_BTN_W + 2, PAG_BTN_H + 2, rl.Color.dark_gray);
+                rl.drawText(prev_text, PAG_PREV_X + 10, PAG_BTN_Y + 5, 24, rl.Color.black);
                 const next_text = std.fmt.bufPrintZ(&text_buf, "Next", .{}) catch "Error";
-                rl.drawText(next_text, next_x + 25, btn_y + 8, 24, rl.Color.black);
+                rl.drawRectangle(PAG_NEXT_X + 3, PAG_BTN_Y + 3, PAG_BTN_W, PAG_BTN_H, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 100 });
+                rl.drawRectangle(PAG_NEXT_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, rl.Color.light_gray);
+                rl.drawRectangleLines(PAG_NEXT_X - 1, PAG_BTN_Y - 1, PAG_BTN_W + 2, PAG_BTN_H + 2, rl.Color.dark_gray);
+                rl.drawText(next_text, PAG_NEXT_X + 10, PAG_BTN_Y + 5, 24, rl.Color.black);
             }
             const instr = std.fmt.bufPrintZ(&text_buf, "Q/E: Prev/Next Page | Left-click: Select | Right-click: Back to Viewer", .{}) catch "Error";
-            rl.drawText(instr, 30, 700, 20, rl.Color.gray);
+            rl.drawText(instr, TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.gray);
             rl.endDrawing();
         }
     }
