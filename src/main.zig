@@ -173,7 +173,7 @@ const CameraInitResult = struct {
 };
 
 fn initCamera(center: [3]f32) CameraInitResult {
-    const distance = 1.0;
+    const distance = 2.0;
     const theta = -std.math.pi / 2.0;
     const phi = std.math.pi / 2.0;
 
@@ -311,7 +311,7 @@ pub const GameState = struct {
         if (file_idx >= file_paths.len) return error.InvalidIndex;
 
         const result = try loadPly(allocator, file_paths[file_idx]);
-        const center: [3]f32 = [_]f32{ 0, 0, 0 };
+        const center: [3]f32 = [_]f32{ 0, 0, 1.5 };
         const cam = initCamera(center);
 
         var shader = try rl.loadShaderFromMemory(SPLAT_VS, SPLAT_FS);
