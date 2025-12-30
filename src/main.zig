@@ -12,6 +12,8 @@ const ZOOM_SPEED_BASE = 20.0;
 const MOVE_SPEED_BASE = 2.0;
 const FOV_MIN = 2.0;
 const FOV_MAX = 90.0;
+const DISTANCE_MIN = 0.01;
+const DISTANCE_MAX = 100.0;
 const CENTER_Z_MIN = -1.0;
 const CENTER_Z_MAX = 2.0;
 const ROTATION_STOP_CAP = 16;
@@ -588,12 +590,13 @@ pub const GameState = struct {
         if (rl.isKeyDown(rl.KeyboardKey.w)) fov_delta += ZOOM_SPEED_BASE * dt;
         if (rl.isKeyDown(rl.KeyboardKey.q)) fov_delta -= ZOOM_SPEED_BASE * dt;
         if (fov_delta != 0) {
+            const old_fov_rad = self.camera.fovy * std.math.pi / 180.0;
+            const view_height = 2.0 * self.cam_state.distance * std.math.tan(old_fov_rad / 2.0);
             self.camera.fovy += fov_delta;
             self.camera.fovy = std.math.clamp(self.camera.fovy, FOV_MIN, FOV_MAX);
-            const current_fov_rad = self.camera.fovy * std.math.pi / 180.0;
-            const view_height = 2.0 * self.cam_state.distance * std.math.tan(current_fov_rad / 2.0);
             const new_fov_rad = self.camera.fovy * std.math.pi / 180.0;
             self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
+            self.cam_state.distance = std.math.clamp(self.cam_state.distance, DISTANCE_MIN, DISTANCE_MAX);
         }
 
         var z_delta: f32 = 0;
@@ -880,6 +883,8 @@ pub fn main() !void {
             }
 
             rl.drawText("Left-click: Select Gaussian Splat | Right-click: Back to Browser", TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.white);
+            rl.drawText("1-2-3-4: Number of splats (100%,150%,20%,10%,4%) | 8-9-0: Splat size (2x, 4x, 8x)", TITLE_X, INSTR_Y + 24, INSTR_FONT_SIZE, rl.Color.white);
+            // 1,2,5,10,25
             rl.endDrawing();
         }
     }
