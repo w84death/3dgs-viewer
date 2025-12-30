@@ -253,6 +253,7 @@ pub const GameState = struct {
     sort_thread: ?Thread = null,
     sort_done: Atomic = Atomic.init(false),
     rotation_stop_counter: usize = 0,
+    is_loading: bool = false,
 
     const SPLATS_PER_CHUNK = 60000;
 
@@ -465,7 +466,7 @@ pub const GameState = struct {
     pub fn update(self: *GameState, dt: f32) void {
         self.frame_count += 1;
 
-        if (rl.isKeyPressed(rl.KeyboardKey.space)) {
+        if (self.is_loading) {
             const next_idx = (self.current_file_idx + 1) % self.file_paths.items.len;
             const next_path = self.file_paths.items[next_idx];
             std.debug.print("Loading {s}...\n", .{next_path});
@@ -485,8 +486,11 @@ pub const GameState = struct {
             } else |err| {
                 std.debug.print("Failed to load {s}: {}\n", .{ next_path, err });
             }
+            self.is_loading = false;
         }
-
+        if (rl.isKeyPressed(rl.KeyboardKey.space)) {
+            self.is_loading = true;
+        }
         // Wheel for distance
         const wheel = rl.getMouseWheelMove();
         if (wheel != 0) {
@@ -555,22 +559,19 @@ pub const GameState = struct {
             self.cam_state.distance = view_height / (2.0 * std.math.tan(new_fov_rad / 2.0));
         }
 
-        // Move camera target (E/R)
-        if (rl.isKeyDown(rl.KeyboardKey.e) or rl.isKeyDown(rl.KeyboardKey.r)) {
+        if (rl.isKeyDown(rl.KeyboardKey.up) or rl.isKeyDown(rl.KeyboardKey.down)) {
             const move_speed = 5.0 * dt;
 
-            // Move along Z axis only (World Space)
-            if (rl.isKeyDown(rl.KeyboardKey.e)) {
+            if (rl.isKeyDown(rl.KeyboardKey.up)) {
                 self.center[2] -= move_speed;
             }
-            if (rl.isKeyDown(rl.KeyboardKey.r)) {
+            if (rl.isKeyDown(rl.KeyboardKey.down)) {
                 self.center[2] += move_speed;
             }
             self.center[2] = std.math.clamp(self.center[2], -10.0, 10.0);
             self.camera.target = .{ .x = self.center[0], .y = self.center[1], .z = self.center[2] };
         }
 
-        // Update camera position
         const cx = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.cos(self.cam_state.theta);
         const cy = self.cam_state.distance * std.math.cos(self.cam_state.phi);
         const cz = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.sin(self.cam_state.theta);
@@ -627,16 +628,26 @@ pub const GameState = struct {
 
         rl.gl.rlDisableBackfaceCulling();
         rl.gl.rlDisableDepthMask();
-        // Draw chunks
-        // const pos = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
         for (self.chunks.items) |chunk| {
-            // rl.drawModel(chunk.model, pos, 1.0, rl.Color.white);
             rl.drawMesh(chunk.model.meshes[0], chunk.model.materials[0], chunk.model.transform);
         }
         rl.gl.rlEnableDepthMask();
         rl.gl.rlEnableBackfaceCulling();
 
         rl.endMode3D();
+
+        if (self.is_loading) {
+            const rect_height = 40;
+            const rect_y = @divTrunc(h, 2) - rect_height / 2;
+            rl.drawRectangle(0, @intCast(rect_y), w, rect_height, rl.Color.black);
+
+            const text = "LOADING...";
+            const font_size = 20;
+            const text_width = rl.measureText(text, font_size);
+            const text_x = @divTrunc(w - text_width, 2);
+            const text_y = @divTrunc(h, 2) - font_size / 2;
+            rl.drawText(text, @intCast(text_x), @intCast(text_y), font_size, rl.Color.white);
+        }
 
         rl.drawFPS(10, 10);
 
