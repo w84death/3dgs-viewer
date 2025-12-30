@@ -180,6 +180,7 @@ pub const GameState = struct {
     file_paths: std.ArrayListUnmanaged([]const u8),
     current_file_idx: usize,
     chunks: std.ArrayListUnmanaged(Chunk),
+    shader: rl.Shader,
 
     pub fn init() !GameState {
         const allocator = std.heap.page_allocator;
@@ -203,6 +204,8 @@ pub const GameState = struct {
         const center: [3]f32 = [_]f32{ 0, 0, 0 };
         const cam = initCamera(center);
 
+        const shader = try rl.loadShader(null, "assets/splat.fs");
+
         var state = GameState{
             .camera = cam.camera,
             .cam_state = cam.cam_state,
@@ -215,6 +218,7 @@ pub const GameState = struct {
             .file_paths = file_paths,
             .current_file_idx = current_file_idx,
             .chunks = .{},
+            .shader = shader,
         };
 
         try state.rebuildChunks();
@@ -223,6 +227,7 @@ pub const GameState = struct {
     }
 
     pub fn deinit(self: *GameState) void {
+        rl.unloadShader(self.shader);
         const allocator = self.allocator;
         for (self.chunks.items) |c| c.deinit();
         self.chunks.deinit(allocator);
@@ -257,15 +262,19 @@ pub const GameState = struct {
 
             if (count > 0) {
                 var mesh = std.mem.zeroes(rl.Mesh);
-                mesh.vertexCount = @intCast(count * 3);
-                mesh.triangleCount = @intCast(count);
+                // 2 triangles (6 vertices) per splat for a quad
+                mesh.vertexCount = @intCast(count * 6);
+                mesh.triangleCount = @intCast(count * 2);
 
                 const vertices = try self.allocator.alloc(f32, @as(usize, @intCast(mesh.vertexCount)) * 3);
                 defer self.allocator.free(vertices);
+                const texcoords = try self.allocator.alloc(f32, @as(usize, @intCast(mesh.vertexCount)) * 2);
+                defer self.allocator.free(texcoords);
                 const colors = try self.allocator.alloc(u8, @as(usize, @intCast(mesh.vertexCount)) * 4);
                 defer self.allocator.free(colors);
 
                 var v_idx: usize = 0;
+                var t_idx: usize = 0;
                 var c_idx: usize = 0;
 
                 for (processed..end) |i| {
@@ -275,27 +284,54 @@ pub const GameState = struct {
                     const x = s.pos[0];
                     const y = s.pos[1];
                     const z = s.pos[2];
-                    const sz = 0.005;
+                    const sz = 0.01;
 
-                    // V1
-                    vertices[v_idx] = x + sz;
+                    // V1 (BL)
+                    vertices[v_idx] = x - sz;
                     vertices[v_idx + 1] = y - sz;
                     vertices[v_idx + 2] = z;
-                    // V2
+                    texcoords[t_idx] = 0.0;
+                    texcoords[t_idx + 1] = 0.0;
+                    // V2 (TL)
                     vertices[v_idx + 3] = x - sz;
-                    vertices[v_idx + 4] = y - sz;
+                    vertices[v_idx + 4] = y + sz;
                     vertices[v_idx + 5] = z;
-                    // V3
-                    vertices[v_idx + 6] = x;
+                    texcoords[t_idx + 2] = 0.0;
+                    texcoords[t_idx + 3] = 1.0;
+                    // V3 (TR)
+                    vertices[v_idx + 6] = x + sz;
                     vertices[v_idx + 7] = y + sz;
                     vertices[v_idx + 8] = z;
-                    v_idx += 9;
+                    texcoords[t_idx + 4] = 1.0;
+                    texcoords[t_idx + 5] = 1.0;
+
+                    // V4 (BL)
+                    vertices[v_idx + 9] = x - sz;
+                    vertices[v_idx + 10] = y - sz;
+                    vertices[v_idx + 11] = z;
+                    texcoords[t_idx + 6] = 0.0;
+                    texcoords[t_idx + 7] = 0.0;
+                    // V5 (TR)
+                    vertices[v_idx + 12] = x + sz;
+                    vertices[v_idx + 13] = y + sz;
+                    vertices[v_idx + 14] = z;
+                    texcoords[t_idx + 8] = 1.0;
+                    texcoords[t_idx + 9] = 1.0;
+                    // V6 (BR)
+                    vertices[v_idx + 15] = x + sz;
+                    vertices[v_idx + 16] = y - sz;
+                    vertices[v_idx + 17] = z;
+                    texcoords[t_idx + 10] = 1.0;
+                    texcoords[t_idx + 11] = 0.0;
+
+                    v_idx += 18;
+                    t_idx += 12;
 
                     const r = s.r;
                     const g = s.g;
                     const b = s.b;
                     const a = s.a;
-                    for (0..3) |_| {
+                    for (0..6) |_| {
                         colors[c_idx] = r;
                         colors[c_idx + 1] = g;
                         colors[c_idx + 2] = b;
@@ -305,15 +341,18 @@ pub const GameState = struct {
                 }
 
                 mesh.vertices = vertices.ptr;
+                mesh.texcoords = texcoords.ptr;
                 mesh.colors = colors.ptr;
 
                 rl.uploadMesh(&mesh, false);
 
                 // Clear pointers so Raylib doesn't try to free our allocator memory
                 mesh.vertices = null;
+                mesh.texcoords = null;
                 mesh.colors = null;
 
                 const model = try rl.loadModelFromMesh(mesh);
+                model.materials[0].shader = self.shader;
                 try self.chunks.append(self.allocator, Chunk{ .model = model });
             }
             processed = end;
@@ -423,11 +462,13 @@ pub const GameState = struct {
 
         rl.beginMode3D(self.camera);
 
+        rl.gl.rlDisableDepthMask();
         // Draw chunks
         const pos = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
         for (self.chunks.items) |chunk| {
             rl.drawModel(chunk.model, pos, 1.0, rl.Color.white);
         }
+        rl.gl.rlEnableDepthMask();
 
         rl.endMode3D();
 
