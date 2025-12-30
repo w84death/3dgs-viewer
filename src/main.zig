@@ -1,6 +1,8 @@
 const Engine = @import("engine/core.zig").Engine;
 const rl = @import("raylib");
 const std = @import("std");
+const Thread = std.Thread;
+const Atomic = std.atomic.Value(bool);
 const WIDTH = 1280;
 const HEIGHT = 800;
 
@@ -247,6 +249,10 @@ pub const GameState = struct {
 
     frame_count: usize = 0,
     needs_sort: bool = false,
+    background_splats: []Splat,
+    sort_thread: ?Thread = null,
+    sort_done: Atomic = Atomic.init(false),
+    rotation_stop_counter: usize = 0,
 
     const SPLATS_PER_CHUNK = 60000;
 
@@ -275,17 +281,19 @@ pub const GameState = struct {
         var shader = try rl.loadShaderFromMemory(SPLAT_VS, SPLAT_FS);
         shader.locs[@intFromEnum(rl.ShaderLocationIndex.matrix_view)] = rl.getShaderLocation(shader, "matView");
 
-        var state = GameState{
+        var self = GameState{
+            .background_splats = &[_]Splat{},
             .camera = cam.camera,
             .cam_state = cam.cam_state,
             .center = center,
             .radius = 10.0,
             .vertex_count = result.vertex_count,
             .splats = result.splats,
+            .skip_factor = 1,
             .allocator = allocator,
             .file_paths = file_paths,
             .current_file_idx = current_file_idx,
-            .chunks = .{},
+            .chunks = try std.ArrayList(Chunk).initCapacity(allocator, 0),
             .shader = shader,
             .scratch_vertices = try allocator.alloc(f32, SPLATS_PER_CHUNK * 6 * 3),
             .scratch_texcoords = try allocator.alloc(f32, SPLATS_PER_CHUNK * 6 * 2),
@@ -293,10 +301,12 @@ pub const GameState = struct {
             .scratch_colors = try allocator.alloc(u8, SPLATS_PER_CHUNK * 6 * 4),
         };
 
-        state.sortSplats();
-        try state.rebuildChunks();
+        self.background_splats = self.allocator.alloc(Splat, self.vertex_count) catch unreachable;
 
-        return state;
+        self.sortSplats();
+        try self.rebuildChunks();
+
+        return self;
     }
 
     pub fn deinit(self: *GameState) void {
@@ -454,7 +464,6 @@ pub const GameState = struct {
 
     pub fn update(self: *GameState, dt: f32) void {
         self.frame_count += 1;
-        const old_cam_pos = self.camera.position;
 
         if (rl.isKeyPressed(rl.KeyboardKey.space)) {
             const next_idx = (self.current_file_idx + 1) % self.file_paths.items.len;
@@ -463,9 +472,10 @@ pub const GameState = struct {
 
             if (loadPly(self.allocator, next_path)) |res| {
                 self.allocator.free(self.splats);
-
+                if (self.background_splats.len > 0) self.allocator.free(self.background_splats);
                 self.splats = res.splats;
                 self.vertex_count = res.vertex_count;
+                self.background_splats = self.allocator.alloc(Splat, self.vertex_count) catch unreachable;
                 self.current_file_idx = next_idx;
 
                 self.sortSplats();
@@ -566,19 +576,42 @@ pub const GameState = struct {
         const cz = self.cam_state.distance * std.math.sin(self.cam_state.phi) * std.math.sin(self.cam_state.theta);
         self.camera.position = .{ .x = self.center[0] + cx, .y = self.center[1] + cy, .z = self.center[2] + cz };
 
-        if (self.camera.position.x != old_cam_pos.x or
-            self.camera.position.y != old_cam_pos.y or
-            self.camera.position.z != old_cam_pos.z)
-        {
-            self.needs_sort = true;
+        if (self.cam_state.dragging) {
+            self.rotation_stop_counter = 0;
+        } else {
+            self.rotation_stop_counter = @min(self.rotation_stop_counter + 1, 16); // Cap to avoid overflow, 31 > 30
+            if (self.rotation_stop_counter == 15) {
+                self.needs_sort = true;
+            }
         }
 
-        if (self.needs_sort and self.frame_count % 30 == 0) {
-            self.sortSplats();
-            self.rebuildChunks() catch |err| {
-                std.debug.print("Failed to rebuild chunks: {}\n", .{err});
-            };
-            self.needs_sort = false;
+        if (self.sort_thread) |*t| {
+            if (self.sort_done.load(.acquire)) {
+                t.join();
+                self.sort_thread = null;
+
+                // Swap buffers
+                const temp = self.splats;
+                self.splats = self.background_splats;
+                self.background_splats = temp;
+
+                self.rebuildChunks() catch |err| {
+                    std.debug.print("Failed to rebuild chunks: {}\n", .{err});
+                };
+                self.needs_sort = false;
+            }
+        }
+
+        if (self.needs_sort and self.frame_count % 30 == 0 and self.sort_thread == null) {
+            // Copy to background and spawn sort thread
+            if (self.background_splats.len != self.splats.len) {
+                self.allocator.free(self.background_splats);
+                self.background_splats = self.allocator.alloc(Splat, self.splats.len) catch unreachable;
+            }
+            @memcpy(self.background_splats, self.splats);
+            const cam_pos = .{ self.camera.position.x, self.camera.position.y, self.camera.position.z };
+            self.sort_done.store(false, .release);
+            self.sort_thread = Thread.spawn(.{}, sortFunction, .{ self, cam_pos }) catch unreachable;
         }
     }
 
@@ -612,6 +645,30 @@ pub const GameState = struct {
         rl.drawText(@ptrCast(&self.buf), 10, 30, 20, rl.Color.white);
     }
 };
+
+fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
+    const SortContext = struct {
+        cam_pos: [3]f32,
+
+        pub fn lessThan(ctx: @This(), a: Splat, b: Splat) bool {
+            const dx_a = a.pos[0] - ctx.cam_pos[0];
+            const dy_a = a.pos[1] - ctx.cam_pos[1];
+            const dz_a = a.pos[2] - ctx.cam_pos[2];
+            const dist_sq_a = dx_a * dx_a + dy_a * dy_a + dz_a * dz_a;
+
+            const dx_b = b.pos[0] - ctx.cam_pos[0];
+            const dy_b = b.pos[1] - ctx.cam_pos[1];
+            const dz_b = b.pos[2] - ctx.cam_pos[2];
+            const dist_sq_b = dx_b * dx_b + dy_b * dy_b + dz_b * dz_b;
+
+            return dist_sq_a > dist_sq_b;
+        }
+    };
+
+    const ctx = SortContext{ .cam_pos = cam_pos };
+    std.sort.block(Splat, state.background_splats, ctx, SortContext.lessThan);
+    state.sort_done.store(true, .release);
+}
 
 pub fn main() !void {
     try Engine.run(GameState);
