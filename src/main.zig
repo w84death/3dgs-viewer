@@ -455,6 +455,8 @@ pub const GameState = struct {
                 var t_idx: usize = 0;
                 var c_idx: usize = 0;
 
+                const Vec3 = @Vector(3, f32);
+
                 var i = start_idx;
                 while (i < end) : (i += self.skip_factor) {
                     const s = self.splats[i];
@@ -464,34 +466,17 @@ pub const GameState = struct {
                     const sx = 2.0 * s.scale[0];
                     const sy = 2.0 * s.scale[1];
 
+                    // SIMD-optimized vertex and normal filling
+                    const pos_vec: Vec3 = .{ x, y, z };
+                    const normal_vec: Vec3 = .{ sx, sy, 0.0 };
                     for (0..6) |k| {
-                        vertices[v_idx + k * 3] = x;
-                        vertices[v_idx + k * 3 + 1] = y;
-                        vertices[v_idx + k * 3 + 2] = z;
-
-                        normals[v_idx + k * 3] = sx;
-                        normals[v_idx + k * 3 + 1] = sy;
-                        normals[v_idx + k * 3 + 2] = 0.0;
+                        std.mem.copyForwards(f32, vertices[v_idx + k * 3 .. v_idx + k * 3 + 3], &@as([3]f32, pos_vec));
+                        std.mem.copyForwards(f32, normals[v_idx + k * 3 .. v_idx + k * 3 + 3], &@as([3]f32, normal_vec));
                     }
 
-                    // V1 (BL)
-                    texcoords[t_idx] = 0.0;
-                    texcoords[t_idx + 1] = 0.0;
-                    // V2 (TL)
-                    texcoords[t_idx + 2] = 0.0;
-                    texcoords[t_idx + 3] = 1.0;
-                    // V3 (TR)
-                    texcoords[t_idx + 4] = 1.0;
-                    texcoords[t_idx + 5] = 1.0;
-                    // V4 (BL)
-                    texcoords[t_idx + 6] = 0.0;
-                    texcoords[t_idx + 7] = 0.0;
-                    // V5 (TR)
-                    texcoords[t_idx + 8] = 1.0;
-                    texcoords[t_idx + 9] = 1.0;
-                    // V6 (BR)
-                    texcoords[t_idx + 10] = 1.0;
-                    texcoords[t_idx + 11] = 0.0;
+                    // SIMD-optimized texcoord filling
+                    const tex_vec: @Vector(12, f32) = .{ 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0 };
+                    std.mem.copyForwards(f32, texcoords[t_idx .. t_idx + 12], &@as([12]f32, tex_vec));
 
                     v_idx += 18;
                     t_idx += 12;
@@ -500,11 +485,10 @@ pub const GameState = struct {
                     const g = s.g;
                     const b = s.b;
                     const a = s.a;
+                    // SIMD-optimized color filling
+                    const color_vec: @Vector(4, u8) = .{ r, g, b, a };
                     for (0..6) |_| {
-                        colors[c_idx] = r;
-                        colors[c_idx + 1] = g;
-                        colors[c_idx + 2] = b;
-                        colors[c_idx + 3] = a;
+                        std.mem.copyForwards(u8, colors[c_idx .. c_idx + 4], &@as([4]u8, color_vec));
                         c_idx += 4;
                     }
                 }
