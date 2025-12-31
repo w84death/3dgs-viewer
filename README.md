@@ -5,7 +5,7 @@ By Krzysztof Krystian Jankowski
 ![screenshot](alpha6.png)
 [Download this seagule.ply](https://github.com/w84death/3dgs-viewer/releases/download/alpha6/seagule.ply)
 
-![screenshot browser](alpha6-browser.png)
+![screenshot browser](alpha7-browser.png)
 
 ## About
 
