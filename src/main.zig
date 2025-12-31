@@ -29,7 +29,7 @@ const TITLE_FONT_SIZE = 20;
 const NAV_X = 20;
 const NAV_Y = 20;
 const GRID_COLS = 4;
-const FILES_PER_PAGE = 40;
+const FILES_PER_PAGE = 8 * GRID_COLS;
 const GRID_BUTTON_W = 280;
 const GRID_BUTTON_H = 60;
 const GRID_SPACING_X = 10;
@@ -40,7 +40,7 @@ const FILENAME_CLIP = 12;
 const PAG_BTN_W = 100;
 const PAG_BTN_H = 40;
 const PAG_BTN_Y = 720;
-const PAG_PREV_X = 30;
+const PAG_PREV_X = 10;
 const PAG_NEXT_X = PAG_PREV_X + PAG_BTN_W + 20;
 const INSTR_Y = 700;
 const INSTR_FONT_SIZE = 14;
@@ -875,7 +875,8 @@ pub fn main() !void {
                 if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Prev", mouse, false)) {
                     if (current_page > 0) current_page -= 1;
                 }
-                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next", mouse, false)) {
+
+                if (button(PAG_PREV_X + PAG_BTN_W + 8, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next", mouse, false)) {
                     if (current_page < total_pages - 1) current_page += 1;
                 }
             }
