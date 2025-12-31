@@ -838,12 +838,12 @@ pub fn main() !void {
 
         if (game_state) |*gs| {
             gs.update(dt);
-            gs.render();
-
             if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
                 gs.deinit();
                 game_state = null;
                 selected_file = null;
+            } else {
+                gs.render();
             }
         } else {
             if (rl.isKeyPressed(rl.KeyboardKey.f)) rl.toggleFullscreen();
