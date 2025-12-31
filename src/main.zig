@@ -23,19 +23,19 @@ const MENU_RECT_X = 20;
 const MENU_RECT_Y = 20;
 const MENU_RECT_W = 1240;
 const MENU_RECT_H = 760;
-const TITLE_X = 30;
-const TITLE_Y = 30;
-const TITLE_FONT_SIZE = 28;
-const NAV_X = 30;
-const NAV_Y = 70;
+const TITLE_X = 20;
+const TITLE_Y = 100;
+const TITLE_FONT_SIZE = 20;
+const NAV_X = 20;
+const NAV_Y = 20;
 const GRID_COLS = 4;
-const FILES_PER_PAGE = 44;
+const FILES_PER_PAGE = 40;
 const GRID_BUTTON_W = 280;
-const GRID_BUTTON_H = 40;
+const GRID_BUTTON_H = 60;
 const GRID_SPACING_X = 10;
 const GRID_SPACING_Y = 10;
-const GRID_START_X = 30;
-const GRID_START_Y = 160;
+const GRID_START_X = 20;
+const GRID_START_Y = 140;
 const FILENAME_CLIP = 12;
 const PAG_BTN_W = 100;
 const PAG_BTN_H = 40;
@@ -43,7 +43,7 @@ const PAG_BTN_Y = 720;
 const PAG_PREV_X = 30;
 const PAG_NEXT_X = PAG_PREV_X + PAG_BTN_W + 20;
 const INSTR_Y = 700;
-const INSTR_FONT_SIZE = 20;
+const INSTR_FONT_SIZE = 14;
 const UI = struct {
     const FPS_POS_X = 10;
     const FPS_POS_Y = 10;
@@ -787,12 +787,14 @@ fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
     state.sort_done.store(true, .release);
 }
 
-pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vector2) bool {
+pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vector2, selected: bool) bool {
     const is_hovered = rl.checkCollisionPointRec(mouse, rl.Rectangle.init(@floatFromInt(x), @floatFromInt(y), @floatFromInt(w), @floatFromInt(h)));
-    const top_color = if (is_hovered) rl.Color.sky_blue else rl.Color.blue;
-    const bottom_color = if (is_hovered) rl.Color.blue else rl.Color.dark_blue;
+    const bottom_color = if (is_hovered) rl.Color.init(64, 64, 192, 128) else rl.Color.init(24, 24, 160, 96);
+    const top_color = if (is_hovered) rl.Color.init(24, 24, 160, 96) else rl.Color.init(64, 64, 192, 128);
+    rl.drawRectangle(x + 4, y + 4, w, h, rl.Color.init(0, 0, 32, 48));
     rl.drawRectangleGradientV(x, y, w, h, top_color, bottom_color);
-    rl.drawText(label, x + 10, y + 5, 24, rl.Color.white);
+    rl.drawRectangleLines(x, y, w, h, rl.Color.init(200, 200, 255, if (selected) 255 else 64));
+    rl.drawText(label, x + 10, y + @divFloor(h, 2), 12, if (is_hovered) rl.Color.white else rl.Color.init(200, 200, 255, 192));
     return rl.isMouseButtonPressed(rl.MouseButton.left) and is_hovered;
 }
 
@@ -865,58 +867,60 @@ pub fn main() !void {
                 const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
                 const clipped = std.mem.sliceTo(path, FILENAME_CLIP);
                 const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
-                if (button(x, y, GRID_BUTTON_W, GRID_BUTTON_H, file_text, mouse)) {
+                if (button(x, y, GRID_BUTTON_W, GRID_BUTTON_H, file_text, mouse, false)) {
                     game_state = try GameState.initWithIdx(allocator, file_paths.items, i, splat_scale, skip_factor);
                 }
             }
             if (total_pages > 1) {
-                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Prev", mouse)) {
+                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Prev", mouse, false)) {
                     if (current_page > 0) current_page -= 1;
                 }
-                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next", mouse)) {
+                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next", mouse, false)) {
                     if (current_page < total_pages - 1) current_page += 1;
                 }
             }
 
             var nav: i32 = @intCast(NAV_X);
-            if (button(nav, NAV_Y, 80, PAG_BTN_H, "Quit", mouse)) {
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, "Quit", mouse, false)) {
                 shoudClose = true;
             }
-            nav += 88 + 20;
-            rl.drawText("Splats:", nav, NAV_Y + 10, INSTR_FONT_SIZE, rl.Color.sky_blue);
-            nav += 76;
-            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 1) "[100%]" else "100%", mouse)) {
+            nav += 88;
+            if (button(nav, NAV_Y, 160, PAG_BTN_H, "Fullscreen", mouse, rl.isWindowFullscreen())) {
+                rl.toggleFullscreen();
+            }
+            nav += 160 + 32;
+            rl.drawText("Splats rendered on screen", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, "100%", mouse, skip_factor == 1)) {
                 skip_factor = 1;
             }
             nav += 88;
-            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 2) "[50%]" else "50%", mouse)) {
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, "50%", mouse, skip_factor == 2)) {
                 skip_factor = 2;
             }
             nav += 88;
-            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 5) "[20%]" else "20%", mouse)) {
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, "20%", mouse, skip_factor == 5)) {
                 skip_factor = 5;
             }
             nav += 88;
-            if (button(nav, NAV_Y, 80, PAG_BTN_H, if (skip_factor == 10) "[10%]" else "10%", mouse)) {
+            if (button(nav, NAV_Y, 80, PAG_BTN_H, "10%", mouse, skip_factor == 10)) {
                 skip_factor = 10;
             }
-            nav += 88 + 30;
-            rl.drawText("Splat size:", nav, NAV_Y + 10, INSTR_FONT_SIZE, rl.Color.sky_blue);
-            nav += 110;
-            if (button(nav, NAV_Y, 60, PAG_BTN_H, if (splat_scale == 2.0) "[2x]" else "2x", mouse)) {
+            nav += 80 + 32;
+            rl.drawText("Individual point splat size", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            if (button(nav, NAV_Y, 60, PAG_BTN_H, "2x", mouse, splat_scale == 2.0)) {
                 splat_scale = 2.0;
             }
             nav += 68;
-            if (button(nav, NAV_Y, 60, PAG_BTN_H, if (splat_scale == 4.0) "[4x]" else "4x", mouse)) {
+            if (button(nav, NAV_Y, 60, PAG_BTN_H, "4x", mouse, splat_scale == 4.0)) {
                 splat_scale = 4.0;
             }
             nav += 68;
-            if (button(nav, NAV_Y, 60, PAG_BTN_H, if (splat_scale == 8.0) "[8x]" else "8x", mouse)) {
+            if (button(nav, NAV_Y, 60, PAG_BTN_H, "8x", mouse, splat_scale == 8.0)) {
                 splat_scale = 8.0;
             }
-
-            rl.drawText("Left-click: Select Gaussian Splat | Right-click: Back to Browser", TITLE_X, INSTR_Y, INSTR_FONT_SIZE, rl.Color.white);
-            rl.drawText("1-2-3-4: Number of splats | 8-9-0: Splat size", TITLE_X, INSTR_Y + 28, INSTR_FONT_SIZE, rl.Color.white);
+            nav += 80;
+            rl.drawText("Left-click: Rotate camera", nav, NAV_Y + 4, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            rl.drawText("Right-click: Back to Browser", nav, NAV_Y + 22, INSTR_FONT_SIZE, rl.Color.sky_blue);
 
             rl.endDrawing();
         }
