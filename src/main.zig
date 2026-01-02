@@ -795,8 +795,10 @@ pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vec
 
     const shift: i32 = if (is_hovered) 2 else 0;
 
-    rl.drawRectangle(x + 4, y + 4, w, h, rl.Color.init(0, 0, 32, 64));
-    rl.drawRectangleGradientV(x + shift, y + shift, w, h, top_color, bottom_color);
+    rl.drawRectangle(x + 4, y + 4, w, h, rl.Color.init(8, 12, 32, 96));
+    rl.drawRectangleGradientV(x + shift, y + shift, w, @divFloor(h, 2), top_color, bottom_color);
+    rl.drawRectangle(shift + x, shift + y + @divFloor(h, 2), w, @divFloor(h, 2), bottom_color);
+
     rl.drawRectangleLines(x + shift, y + shift, w, h, rl.Color.init(255, 255, 255, if (selected) 255 else 128));
     rl.drawText(label, x + 8 + shift, shift + y + @divFloor(h, 2) - BUTTON_TEXT_SIZE / 2, BUTTON_TEXT_SIZE, rl.Color.white);
     if (selected) rl.drawRectangle(x + shift, y + shift, w, 4, rl.Color.init(255, 255, 255, 255));
@@ -872,7 +874,7 @@ pub fn main() !void {
                 const x = GRID_START_X + col * (GRID_BUTTON_W + GRID_SPACING_X);
                 const y = GRID_START_Y + row * (GRID_BUTTON_H + GRID_SPACING_Y);
                 const clipped = std.mem.sliceTo(path, FILENAME_CLIP);
-                const file_text = std.fmt.bufPrintZ(&text_buf, "{s}", .{clipped}) catch "Error";
+                const file_text = std.fmt.bufPrintZ(&text_buf, "> {s}", .{clipped}) catch "Error";
                 if (button(x, y, GRID_BUTTON_W, GRID_BUTTON_H, file_text, mouse, false)) {
                     game_state = try GameState.initWithIdx(allocator, file_paths.items, i, splat_scale, skip_factor);
                 }
