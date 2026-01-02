@@ -284,7 +284,7 @@ pub const GameState = struct {
     vertex_count: usize,
     rendered_splats_count: usize = 0,
     splats: []Splat,
-    splat_scale: f32 = 2.0,
+    splat_scale: f32 = 4.0,
     skip_factor: usize = 10,
     buf: [64]u8 = undefined,
     allocator: std.mem.Allocator,
@@ -791,10 +791,13 @@ pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vec
     const is_hovered = rl.checkCollisionPointRec(mouse, rl.Rectangle.init(@floatFromInt(x), @floatFromInt(y), @floatFromInt(w), @floatFromInt(h)));
     const bottom_color = if (is_hovered) rl.Color.init(64, 64, 192, 128) else rl.Color.init(24, 24, 160, 96);
     const top_color = if (is_hovered) rl.Color.init(24, 24, 160, 96) else rl.Color.init(64, 64, 192, 128);
+
+    const shift: i32 = if (is_hovered) 2 else 0;
+
     rl.drawRectangle(x + 4, y + 4, w, h, rl.Color.init(0, 0, 32, 48));
-    rl.drawRectangleGradientV(x, y, w, h, top_color, bottom_color);
-    rl.drawRectangleLines(x, y, w, h, rl.Color.init(200, 200, 255, if (selected) 255 else 64));
-    rl.drawText(label, x + 10, y + @divFloor(h, 2), 12, if (is_hovered) rl.Color.white else rl.Color.init(200, 200, 255, 192));
+    rl.drawRectangleGradientV(x + shift, y + shift, w, h, top_color, bottom_color);
+    rl.drawRectangleLines(x + shift, y + shift, w, h, rl.Color.init(200, 200, 255, if (selected) 255 else 64));
+    rl.drawText(label, x + 10 + shift, shift + y + @divFloor(h, 2), 12, if (is_hovered) rl.Color.white else rl.Color.init(200, 200, 255, 192));
     return rl.isMouseButtonPressed(rl.MouseButton.left) and is_hovered;
 }
 
@@ -831,7 +834,7 @@ pub fn main() !void {
     var text_buf: [256]u8 = undefined;
     var shoudClose: bool = false;
     var skip_factor: usize = 1;
-    var splat_scale: f32 = 2.0;
+    var splat_scale: f32 = 4.0;
     while (!rl.windowShouldClose() and !shoudClose) {
         const dt = rl.getFrameTime();
         const mouse = rl.getMousePosition();
@@ -921,7 +924,8 @@ pub fn main() !void {
             }
             nav += 80;
             rl.drawText("Left-click: Rotate camera", nav, NAV_Y + 4, INSTR_FONT_SIZE, rl.Color.sky_blue);
-            rl.drawText("Right-click: Back to Browser", nav, NAV_Y + 22, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            rl.drawText("Right-click: Back to Browser", nav, NAV_Y + 22, INSTR_FONT_SIZE, rl.Color.ray_white);
+            rl.drawText("Q, W: Vertigo Effect", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.sky_blue);
 
             rl.endDrawing();
         }
