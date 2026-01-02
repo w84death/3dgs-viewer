@@ -28,6 +28,7 @@ const TITLE_Y = 100;
 const TITLE_FONT_SIZE = 20;
 const NAV_X = 20;
 const NAV_Y = 20;
+const BUTTON_TEXT_SIZE = 20;
 const GRID_COLS = 4;
 const FILES_PER_PAGE = 8 * GRID_COLS;
 const GRID_BUTTON_W = 280;
@@ -37,13 +38,13 @@ const GRID_SPACING_Y = 10;
 const GRID_START_X = 20;
 const GRID_START_Y = 140;
 const FILENAME_CLIP = 12;
-const PAG_BTN_W = 100;
+const PAG_BTN_W = 180;
 const PAG_BTN_H = 40;
 const PAG_BTN_Y = 720;
-const PAG_PREV_X = 10;
+const PAG_PREV_X = 20;
 const PAG_NEXT_X = PAG_PREV_X + PAG_BTN_W + 20;
 const INSTR_Y = 700;
-const INSTR_FONT_SIZE = 14;
+const INSTR_FONT_SIZE = 15;
 const UI = struct {
     const FPS_POS_X = 10;
     const FPS_POS_Y = 10;
@@ -789,15 +790,16 @@ fn sortFunction(state: *GameState, cam_pos: [3]f32) void {
 
 pub fn button(x: i32, y: i32, w: i32, h: i32, label: [:0]const u8, mouse: rl.Vector2, selected: bool) bool {
     const is_hovered = rl.checkCollisionPointRec(mouse, rl.Rectangle.init(@floatFromInt(x), @floatFromInt(y), @floatFromInt(w), @floatFromInt(h)));
-    const bottom_color = if (is_hovered) rl.Color.init(64, 64, 192, 128) else rl.Color.init(24, 24, 160, 96);
-    const top_color = if (is_hovered) rl.Color.init(24, 24, 160, 96) else rl.Color.init(64, 64, 192, 128);
+    const bottom_color = if (is_hovered) rl.Color.init(81, 113, 146, 255) else rl.Color.init(50, 67, 97, 255);
+    const top_color = if (is_hovered) rl.Color.init(50, 67, 97, 255) else rl.Color.init(81, 113, 146, 255);
 
     const shift: i32 = if (is_hovered) 2 else 0;
 
-    rl.drawRectangle(x + 4, y + 4, w, h, rl.Color.init(0, 0, 32, 48));
+    rl.drawRectangle(x + 4, y + 4, w, h, rl.Color.init(0, 0, 32, 64));
     rl.drawRectangleGradientV(x + shift, y + shift, w, h, top_color, bottom_color);
-    rl.drawRectangleLines(x + shift, y + shift, w, h, rl.Color.init(200, 200, 255, if (selected) 255 else 64));
-    rl.drawText(label, x + 10 + shift, shift + y + @divFloor(h, 2), 12, if (is_hovered) rl.Color.white else rl.Color.init(200, 200, 255, 192));
+    rl.drawRectangleLines(x + shift, y + shift, w, h, rl.Color.init(255, 255, 255, if (selected) 255 else 128));
+    rl.drawText(label, x + 8 + shift, shift + y + @divFloor(h, 2) - BUTTON_TEXT_SIZE / 2, BUTTON_TEXT_SIZE, rl.Color.white);
+    if (selected) rl.drawRectangle(x + shift, y + shift, w, 4, rl.Color.init(255, 255, 255, 255));
     return rl.isMouseButtonPressed(rl.MouseButton.left) and is_hovered;
 }
 
@@ -858,9 +860,10 @@ pub fn main() !void {
             // Draw menu
             rl.beginDrawing();
             rl.clearBackground(rl.Color.black);
-            rl.drawCircleGradient(MENU_RECT_X + MENU_RECT_W / 2, MENU_RECT_Y + MENU_RECT_H / 2, @floatFromInt(MENU_RECT_H), rl.Color.dark_blue, rl.Color.black);
+            rl.drawRectangleGradientV(0, 100, WIDTH, HEIGHT, rl.Color.init(11, 21, 33, 255), rl.Color.init(23, 43, 68, 255));
+            rl.drawRectangle(0, 0, WIDTH, 100, rl.Color.init(42, 67, 97, 255));
             const title = std.fmt.bufPrintZ(&text_buf, "Select a PLY file to view (Page {}/{})", .{ current_page + 1, total_pages }) catch "Error";
-            rl.drawText(title, TITLE_X, TITLE_Y, TITLE_FONT_SIZE, rl.Color.white);
+            rl.drawText(title, GRID_START_X, GRID_START_Y - 28, TITLE_FONT_SIZE, rl.Color.white);
             for (0..end_idx - start_idx) |local_i| {
                 const i = start_idx + local_i;
                 const path = file_paths.items[i];
@@ -875,11 +878,11 @@ pub fn main() !void {
                 }
             }
             if (total_pages > 1) {
-                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Prev", mouse, false)) {
+                if (button(PAG_PREV_X, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Prev Page", mouse, false)) {
                     if (current_page > 0) current_page -= 1;
                 }
 
-                if (button(PAG_PREV_X + PAG_BTN_W + 8, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next", mouse, false)) {
+                if (button(PAG_PREV_X + PAG_BTN_W + 8, PAG_BTN_Y, PAG_BTN_W, PAG_BTN_H, "Next Page", mouse, false)) {
                     if (current_page < total_pages - 1) current_page += 1;
                 }
             }
@@ -893,7 +896,7 @@ pub fn main() !void {
                 rl.toggleFullscreen();
             }
             nav += 160 + 32;
-            rl.drawText("Splats rendered on screen", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            rl.drawText("Splats rendered on screen", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.white);
             if (button(nav, NAV_Y, 80, PAG_BTN_H, "100%", mouse, skip_factor == 1)) {
                 skip_factor = 1;
             }
@@ -910,7 +913,7 @@ pub fn main() !void {
                 skip_factor = 10;
             }
             nav += 80 + 32;
-            rl.drawText("Individual point splat size", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            rl.drawText("Individual point splat size", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.white);
             if (button(nav, NAV_Y, 60, PAG_BTN_H, "2x", mouse, splat_scale == 2.0)) {
                 splat_scale = 2.0;
             }
@@ -923,10 +926,15 @@ pub fn main() !void {
                 splat_scale = 8.0;
             }
             nav += 80;
-            rl.drawText("Left-click: Rotate camera", nav, NAV_Y + 4, INSTR_FONT_SIZE, rl.Color.sky_blue);
-            rl.drawText("Right-click: Back to Browser", nav, NAV_Y + 22, INSTR_FONT_SIZE, rl.Color.ray_white);
-            rl.drawText("Q, W: Vertigo Effect", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.sky_blue);
+            rl.drawText("Left-click: Rotate camera", nav, NAV_Y + 4, INSTR_FONT_SIZE, rl.Color.white);
+            rl.drawText("Right-click: Back to Browser", nav, NAV_Y + 22, INSTR_FONT_SIZE, rl.Color.white);
+            rl.drawText("Q, W: Vertigo Effect", nav, NAV_Y + 44, INSTR_FONT_SIZE, rl.Color.white);
 
+            // draw crosshair
+            const mx: i32 = @intFromFloat(mouse.x);
+            const my: i32 = @intFromFloat(mouse.y);
+            rl.drawLine(0, my, WIDTH, my, rl.Color.init(255, 255, 255, 32));
+            rl.drawLine(mx, 0, mx, HEIGHT, rl.Color.init(255, 255, 255, 32));
             rl.endDrawing();
         }
     }
